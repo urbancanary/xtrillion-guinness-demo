@@ -1,0 +1,10 @@
+# Google Analysis 9 - Production Requirements
+# Compatible versions that work together without numpy conflicts
+
+numpy==1.24.3
+pandas==2.0.3
+QuantLib==1.31
+python-dateutil==2.8.2
+requests==2.31.0
+flask==2.3.2
+gunicorn==21.2.0
