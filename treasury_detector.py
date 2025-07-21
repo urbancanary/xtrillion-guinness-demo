@@ -64,6 +64,10 @@ class DualDatabaseTreasuryDetector:
                     if len(year) == 2:
                         year = f"20{year}"
                     
+                    # Ensure month and day are strings for zfill
+                    month = str(month)
+                    day = str(day)
+                    
                     maturity = f"{year}-{month.zfill(2)}-{day.zfill(2)}"  # Now correct: 2052-08-15
                     
                     return {

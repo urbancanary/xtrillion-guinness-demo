@@ -1,6 +1,30 @@
-# 🏦 Google Analysis9 - Institutional Bond Analytics
+# 🏦 Google Analysis 10 - Enhanced Bond Portfolio Analytics
 
-Advanced bond analytics system with QuantLib integration and Bloomberg-level accuracy.
+Advanced bond analytics system with QuantLib integration, Bloomberg-level accuracy, and institutional-grade portfolio risk metrics.
+
+## 🎯 **25-Bond Portfolio Testing Ready!**
+**Enhanced API with Convexity, Option-Adjusted Duration (OAD), and Real Market Price Integration**
+
+## 🚀 **Quick Start - Portfolio API Testing**
+
+### Start the Enhanced Portfolio API
+```bash
+cd /Users/andyseaman/Notebooks/json_receiver_project/google_analysis10
+./start_ga10_portfolio_api.sh
+```
+
+**API Endpoints:**
+- 📡 **Base URL:** http://localhost:8080
+- 🔍 **Health Check:** http://localhost:8080/health  
+- 📊 **Portfolio Analytics:** http://localhost:8080/api/v1/portfolio/analyze
+- 🏦 **Individual Bond:** http://localhost:8080/api/v1/bond/parse-and-calculate
+
+### Features Ready for Testing
+- ✅ **25-Bond Portfolio Analytics** with real market prices
+- ✅ **Enhanced Risk Metrics:** Duration, Convexity, Option-Adjusted Duration
+- ✅ **Treasury Bond Detection** with ActualActual_ISDA conventions
+- ✅ **Real Market Integration** with PX_MID pricing
+- ✅ **Bloomberg-Grade Calculations** with 85.5% accuracy rate
 
 ## 🚨 **DEPLOYMENT AUTHORITY - READ THIS FIRST**
 **📋 [CORRECT DEPLOYMENT FACTS - FINAL AUTHORITY](🚨_CORRECT_DEPLOYMENT_FACTS_FINAL.md)**
@@ -42,6 +66,32 @@ cd /Users/andyseaman/Notebooks/json_receiver_project/google_analysis10
 - **Streamlit Dashboard** for interactive analysis
 - **Docker containerization** for easy deployment
 - **Binary status system** (PASS/FAIL only, no grades)
+
+## 📝 File Naming Changes (July 2025)
+
+**IMPORTANT:** Core calculation module renamed to follow version convention:
+- **OLD NAME:** `google_analysis9.py` ❌ (wrong version - was in google_analysis10 folder)  
+- **NEW NAME:** `google_analysis10.py` ✅ (renamed July 21, 2025)
+
+**Follows established pattern:**
+- google_analysis8.py → google_analysis8 folder
+- google_analysis9.py → google_analysis9 folder  
+- google_analysis10.py → google_analysis10 folder ✅
+
+**What this file contains:**
+- Main QuantLib bond calculation engine
+- Treasury vs Corporate bond logic differentiation
+- Duration calculation using `ql.BondFunctions.duration()`
+- Portfolio processing with weightings via `process_bonds_with_weightings()`
+
+**Import statements updated:**
+```python
+# Old import (deprecated)  
+from google_analysis9 import process_bonds_with_weightings
+
+# New import (current)
+from google_analysis10 import process_bonds_with_weightings
+```
 
 ## 🏗️ Calculation Loop Architecture
 
@@ -102,17 +152,17 @@ def get_working_accrued_calculation():
    status = 'PASS' if abs(bloomberg_accrued - quantlib_accrued) <= 0.01 else 'FAIL'
    ```
 
-## 🚀 Quick Start
+## 🚀 Legacy Development Commands
 
 ### Prerequisites
 - Python 3.8+
 - QuantLib
 - Required dependencies: `pip install -r requirements.txt`
 
-### Run Current Calculations
+### Run Legacy Calculations
 ```bash
 # Navigate to project directory
-cd /Users/andyseaman/Notebooks/json_receiver_project/google_analysis9
+cd /Users/andyseaman/Notebooks/json_receiver_project/google_analysis10
 
 # Run comprehensive calculations on all bonds
 python3 -c "
@@ -120,7 +170,10 @@ from bbg_quantlib_calculations import calculate_comprehensive_enhanced
 result = calculate_comprehensive_enhanced('all_bonds_calculations')
 "
 
-# Start the API server
+# Start the enhanced portfolio API (RECOMMENDED)
+./start_ga10_portfolio_api.sh
+
+# Alternative: Start legacy API server
 python3 google_analysis9_api.py
 
 # Start the Streamlit dashboard
@@ -141,16 +194,43 @@ conn.close()
 "
 ```
 
-## 📋 Current API Endpoints
+## 📋 Enhanced API Endpoints (Google Analysis 10)
 
-### Bond Analysis
-- `POST /api/v1/portfolio/analyze` - Portfolio analysis with binary PASS/FAIL
+### Portfolio Analytics (NEW!)
+- `POST /api/v1/portfolio/analyze` - **25-Bond Portfolio Analysis** with enhanced metrics
+- `POST /api/v1/bond/parse-and-calculate` - **Individual Bond Analytics** with convexity & OAD
+- `GET /api/v1/enhanced` - **Enhanced endpoint** with all new features
+
+### Real Market Price Testing (NEW!)
+- **Market Price Integration:** Real PX_MID pricing data
+- **Enhanced Risk Metrics:** Convexity, Option-Adjusted Duration (OAD)  
+- **Treasury Detection:** Automatic ActualActual_ISDA for US Treasuries
+- **Portfolio Aggregation:** Weight-averaged portfolio risk metrics
+
+### Legacy Endpoints
+- `POST /api/v1/portfolio/analyze` - Basic portfolio analysis 
 - `GET /api/v1/bonds/{isin}` - Individual bond analytics
 - `POST /api/v1/bonds/calculate` - Custom bond calculations
 
 ### Health & Status
-- `GET /health` - Service health check
+- `GET /health` - Enhanced service health check with new capabilities
 - `GET /api/v1/status` - System status with PASS/FAIL counts
+
+## 🎯 **Current Testing Focus: 25-Bond Portfolio**
+
+### Test Portfolio Composition
+- **US Treasury:** US912810TJ79 (T 3% 15/08/52) @ 71.66
+- **GCC Sovereigns:** Qatar, Saudi Arabia, UAE bonds
+- **LatAm Corporates:** PEMEX, ECOPETROL, Colombia  
+- **Infrastructure:** Mexico Airport, Chile Metro
+- **Price Range:** 52.71 (Colombia) to 103.03 (Greensaif)
+- **Maturity Range:** 2025 (QNB short-term) to 2110 (Mexico ultra-long)
+
+### Expected Results
+- **Portfolio Yield:** ~6-7% (market reality vs par assumptions)
+- **Duration:** ~15-20 years (diversified duration exposure)
+- **Convexity:** Enhanced bond price sensitivity metrics
+- **Geographic Mix:** US, GCC, LatAm diversification
 
 ## 🔬 Technical Implementation
 

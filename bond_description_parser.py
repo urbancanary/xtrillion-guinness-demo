@@ -28,8 +28,8 @@ class SmartBondParser:
         self.validated_db_path = validated_db_path
         self.logger = logging.getLogger(__name__)
         
-        # For ticker convention lookup - use ../data/bloomberg_index.db
-        self.bloomberg_db_path = self.db_path.replace('../data/../data/bonds_data.db', '../data/../data/bloomberg_index.db')
+        # For ticker convention lookup - use bloomberg_index.db
+        self.bloomberg_db_path = self.db_path.replace('bonds_data.db', 'bloomberg_index.db')
         
         # Enhanced parsing patterns for various bond description formats
         self.bond_patterns = [
@@ -50,6 +50,9 @@ class SmartBondParser:
             # UST patterns: "UST 2.5 05/31/24"
             (r'^UST?\s+([\d\.]+)\s+(\d{1,2})\/(\d{1,2})\/(\d{2,4})$', 'treasury'),
             
+            # US TREASURY patterns: "US TREASURY N/B, 3%, 15-Aug-2052"
+            (r'^US TREASURY.*?,\s*([\d\.]+)%?,\s*(\d{1,2})-([A-Za-z]{3})-(\d{4})$', 'treasury'),
+            
             # Corporate patterns: "AAPL 3.25 02/23/26", "MSFT 2.4 08/08/22"
             (r'^([A-Z]{2,6})\s+([\d\.]+)\s+(\d{1,2})\/(\d{1,2})\/(\d{2,4})$', 'corporate'),
             
@@ -66,7 +69,7 @@ class SmartBondParser:
         # Default conventions by bond type
         self.default_conventions = {
             'treasury': {
-                'day_count': 'ActualActual_ISDA',
+                'day_count': 'ActualActual_Bond',  # Treasury standard - Bond not ISDA
                 'business_convention': 'Following',
                 'frequency': 'Semiannual',
                 'currency': 'USD',
@@ -206,6 +209,11 @@ class SmartBondParser:
     
     def parse_maturity_date(self, month: str, day: str, year: str) -> str:
         """Convert date components to ISO format with correct future date logic"""
+        # Ensure all inputs are strings (handle both string and int inputs)
+        month = str(month)
+        day = str(day)  
+        year = str(year)
+        
         if len(year) == 2:
             year_int = int(year)
             current_year = datetime.now().year
@@ -268,32 +276,44 @@ class SmartBondParser:
                     
                     # *** EXISTING PATTERNS (unchanged) ***
                     elif bond_type == 'treasury':
-                        if len(groups) == 4:  # T 4.1 02/15/28 format
-                            coupon_str, day, month, year = groups  # FIXED: Correct day, month order
-                            coupon = self.parse_fractional_coupon(coupon_str)
-                            issuer = "US Treasury"
+                        if len(groups) == 4:
+                            # Handle both old "T 4.1 02/15/28" and new "US TREASURY N/B, 3%, 15-Aug-2052" formats
+                            if groups[2].isalpha():  # New format: month is a name (e.g., "Aug")
+                                coupon_str, day, month_name, year = groups
+                                coupon = float(coupon_str)
+                                month = self.convert_month_name_to_number(month_name)
+                                issuer = "US Treasury"
+                                # For Treasury patterns, pass month, day, year in correct order
+                                maturity = self.parse_maturity_date(month, day, year)
+                            else:  # Old format: month is a number
+                                coupon_str, day, month, year = groups  # ✅ FIXED: For Treasury format "T 3 15/08/2052" = day/month/year
+                                coupon = self.parse_fractional_coupon(coupon_str)
+                                issuer = "US Treasury"
+                                maturity = self.parse_maturity_date(month, day, year)
                         else:
                             continue
                     
                     elif bond_type == 'corporate':
                         if len(groups) == 4:  # AAPL 3.25 02/23/26 format
-                            issuer, coupon_str, day, month, year = groups  # FIXED: Correct day, month order
+                            issuer, coupon_str, month, day, year = groups  # ✅ KEEPING: MM/DD/YY format for corporates
                             coupon = float(coupon_str)
+                            maturity = self.parse_maturity_date(month, day, year)
                         elif len(groups) == 5:  # Full name format
-                            issuer, coupon_str, day, month, year = groups  # FIXED: Correct day, month order
+                            issuer, coupon_str, month, day, year = groups  # ✅ KEEPING: MM/DD/YY format for corporates
                             coupon = float(coupon_str)
+                            maturity = self.parse_maturity_date(month, day, year)
                         else:
                             continue
                     
                     elif bond_type == 'government':
-                        issuer, coupon_str, day, month, year = groups  # FIXED: Correct day, month order
+                        issuer, coupon_str, month, day, year = groups  # ✅ CORRECTED: MM/DD/YY format
                         coupon = float(coupon_str)
+                        maturity = self.parse_maturity_date(month, day, year)
                     
                     elif bond_type == 'zero_coupon':
-                        issuer, coupon_str, day, month, year = groups  # FIXED: Correct day, month order
+                        issuer, coupon_str, month, day, year = groups  # ✅ CORRECTED: MM/DD/YY format
                         coupon = float(coupon_str)
-                    
-                    maturity = self.parse_maturity_date(month, day, year)  # Pass month, day in function's expected order
+                        maturity = self.parse_maturity_date(month, day, year)
                     
                     return {
                         'issuer': issuer,
@@ -321,7 +341,7 @@ class SmartBondParser:
         if coupon_match and date_match:
             try:
                 coupon = float(coupon_match.group(1))
-                month, day, year = date_match.groups()
+                month, day, year = date_match.groups()  # ✅ MM/DD/YY format is correct here
                 maturity = self.parse_maturity_date(month, day, year)
                 
                 # Extract issuer (everything before the coupon)
@@ -395,8 +415,8 @@ class SmartBondParser:
             # Treasury override - always use treasury conventions for treasuries
             if bond_data.get('bond_type') == 'treasury':
                 predicted_conventions.update({
-                    'day_count': 'ActualActual_ISDA',  # Treasury standard
-                    'business_convention': 'Following',
+                    'day_count': 'ActualActual_Bond',  # Treasury standard - Bond not ISDA
+                    'business_convention': 'Following',  # ✅ CORRECT: US Treasuries move payment dates to business days
                     'frequency': 'Semiannual',
                     'prediction_confidence': 'very_high',
                     'treasury_override': True,
@@ -429,7 +449,7 @@ class SmartBondParser:
         """Calculate using TICKER-FIRST approach - no database dependency"""
         try:
             self.logger.info(f"🎯 TICKER-FIRST APPROACH: Using ticker conventions WITHOUT database dependency")
-            from google_analysis9 import process_bonds_with_weightings
+            from google_analysis10 import process_bonds_with_weightings
             import pandas as pd
             
             if not settlement_date:

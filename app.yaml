@@ -1,0 +1,18 @@
+runtime: python39
+
+entrypoint: gunicorn --bind :$PORT --workers 1 --timeout 0 main:app
+
+env_variables:
+  PORT: 8080
+  ENVIRONMENT: production
+  DATABASE_PATH: bonds_data.db
+  VALIDATED_DB_PATH: validated_quantlib_bonds.db
+
+automatic_scaling:
+  min_instances: 0
+  max_instances: 10
+
+resources:
+  cpu: 1
+  memory_gb: 4
+  disk_size_gb: 10

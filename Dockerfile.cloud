@@ -22,18 +22,20 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application files (including databases for embedded deployment)
+# Copy ONLY application code - INCLUDING DATABASES FOR RELIABILITY
 COPY . .
-RUN rm -rf archive/ __pycache__/ *.log test_*.py debug_*.py
 
-# Ensure databases are present for embedded deployment
-RUN ls -la bonds_data.db validated_quantlib_bonds.db || echo "Warning: Database files missing"
+# Clean up unnecessary files but KEEP databases
+RUN rm -rf __pycache__/ *.log test_*.py debug_*.py archive/ 
 
-# Create data directory for potential database downloads
+# Ensure critical databases are present
+RUN ls -la *.db && echo "✅ Local databases found" || echo "⚠️ Some databases missing" 
+
+# Create data directory for GCS downloads
 RUN mkdir -p /app/data
 
-# Make database download script executable (if needed)
-RUN [ -f "download_databases_from_gcs.sh" ] && chmod +x download_databases_from_gcs.sh || echo "Download script not found"
+# Make database download script executable (if it exists)
+RUN [ -f download_databases_from_gcs.sh ] && chmod +x download_databases_from_gcs.sh || echo "Download script not found"
 
 # Set environment variables for XTrillion-GA10
 ENV PORT=8080
@@ -50,30 +52,26 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Expose port
 EXPOSE 8080
 
-# Create XTrillion-GA10 startup script
+# Create startup script that uses LOCAL databases (more reliable)
 RUN echo '#!/bin/bash' > /app/startup.sh && \
     echo 'set -e' >> /app/startup.sh && \
     echo 'echo "🚀 Starting XTrillion-GA10 Bond Analytics Service..."' >> /app/startup.sh && \
     echo 'echo "📊 Service: xtrillion-ga10"' >> /app/startup.sh && \
     echo 'echo "🌐 Environment: $ENVIRONMENT"' >> /app/startup.sh && \
-    echo 'echo "💾 Database Source: $DATABASE_SOURCE"' >> /app/startup.sh && \
+    echo 'echo "💾 Database Source: LOCAL (embedded for reliability)"' >> /app/startup.sh && \
     echo 'echo ""' >> /app/startup.sh && \
-    echo '# Check if databases exist locally (embedded deployment)' >> /app/startup.sh && \
+    echo '# Use LOCAL databases (faster and more reliable than GCS download)' >> /app/startup.sh && \
     echo 'if [ -f "bonds_data.db" ] && [ -f "validated_quantlib_bonds.db" ]; then' >> /app/startup.sh && \
-    echo '    echo "✅ Using embedded databases"' >> /app/startup.sh && \
+    echo '    echo "✅ Using local embedded databases"' >> /app/startup.sh && \
     echo '    export DATABASE_PATH="/app/bonds_data.db"' >> /app/startup.sh && \
     echo '    export VALIDATED_DB_PATH="/app/validated_quantlib_bonds.db"' >> /app/startup.sh && \
-    echo 'elif [ -f "download_databases_from_gcs.sh" ]; then' >> /app/startup.sh && \
-    echo '    echo "🔽 Downloading databases from GCS..."' >> /app/startup.sh && \
-    echo '    ./download_databases_from_gcs.sh' >> /app/startup.sh && \
-    echo '    export DATABASE_PATH="/app/data/bonds_data.db"' >> /app/startup.sh && \
-    echo '    export VALIDATED_DB_PATH="/app/data/validated_quantlib_bonds.db"' >> /app/startup.sh && \
     echo 'else' >> /app/startup.sh && \
-    echo '    echo "❌ No databases found and no download script available"' >> /app/startup.sh && \
+    echo '    echo "❌ Critical databases missing! Check Docker build."' >> /app/startup.sh && \
+    echo '    ls -la *.db || echo "No .db files found"' >> /app/startup.sh && \
     echo '    exit 1' >> /app/startup.sh && \
     echo 'fi' >> /app/startup.sh && \
     echo 'echo ""' >> /app/startup.sh && \
-    echo 'echo "🎯 Starting XTrillion-GA10 API server..."' >> /app/startup.sh && \
+    echo 'echo "🎯 Starting XTrillion-GA10 API server with local databases..."' >> /app/startup.sh && \
     echo 'python3 google_analysis10_api.py' >> /app/startup.sh && \
     chmod +x /app/startup.sh
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Google Analysis 9 - Production Bond Analytics API with Business-Focused Responses
+Google Analysis 10 - Production Bond Analytics API with Business-Focused Responses
 ================================================================================
 
 Professional-grade bond portfolio analytics service with real bond database.
@@ -23,7 +23,7 @@ from functools import wraps
 sys.path.append('.')
 
 # Import our bond analytics engine
-from google_analysis9 import process_bonds_with_weightings
+from google_analysis10 import process_bonds_with_weightings
 # Import treasury detection enhancement
 from treasury_detector import enhance_bond_processing_with_treasuries
 # Import smart bond parser
@@ -76,9 +76,9 @@ def format_business_response(parsed_bond, calculation_results, predicted_convent
             "description": parsed_bond.get('description_input', '')
         },
         "analytics": {
-            "yield": round(calculation_results.get('yield_to_maturity', 0), 2),
-            "duration": round(calculation_results.get('duration', 0), 2),
-            "accrued_interest": round(calculation_results.get('accrued_interest', 0), 2),
+            "yield": round(calculation_results.get('yield_to_maturity', 0), 6),
+            "duration": round(calculation_results.get('duration', 0), 6),
+            "accrued_per_100": round(calculation_results.get('accrued_interest', 0), 6),
             "price": calculation_inputs.get('price', 100.0),
             "settlement": calculation_inputs.get('settlement_date', get_prior_month_end())
         },
@@ -139,14 +139,14 @@ def format_portfolio_business_response(bond_data, portfolio_metrics):
 
 # Valid API keys (professional format - 24+ characters)
 VALID_API_KEYS = {
-    'gax9_inst_7k9d2m5p8w1e6r4t3y': {'name': 'Institutional Access Key', 'permissions': 'full', 'user': 'institutional'},
-    'gax9_dev_4n8s6k2x7p9v5m1w8z': {'name': 'Development Environment Key', 'permissions': 'full', 'user': 'development'},
-    'gax9_demo_3j5h8m9k2p6r4t7w1q': {'name': 'Public Demonstration Key', 'permissions': 'full', 'user': 'demo'},
-    'gax9_test_9r4t7w2k5m8p1z6x3v': {'name': 'Internal Testing Key', 'permissions': 'full', 'user': 'test'},
-    'gax9_trial_6k8p2r9w4m7v1t5z8x': {'name': 'Trial Access Key', 'permissions': 'full', 'user': 'trial'},
-    'gax9_stage_2p6k9r4w7t1m5v8z3x': {'name': 'Staging Environment Key', 'permissions': 'full', 'user': 'staging'},
-    'gax9_prod_8w5r9k2t6p1v4z7m3x': {'name': 'Production Deployment Key', 'permissions': 'full', 'user': 'production'},
-    'gax9_api_5t8k2w7r4p9v1z6m3x': {'name': 'General API Access Key', 'permissions': 'full', 'user': 'api'}
+    'gax10_inst_7k9d2m5p8w1e6r4t3y': {'name': 'Institutional Access Key', 'permissions': 'full', 'user': 'institutional'},
+    'gax10_dev_4n8s6k2x7p9v5m1w8z': {'name': 'Development Environment Key', 'permissions': 'full', 'user': 'development'},
+    'gax10_demo_3j5h8m9k2p6r4t7w1q': {'name': 'Public Demonstration Key', 'permissions': 'full', 'user': 'demo'},
+    'gax10_test_9r4t7w2k5m8p1z6x3v': {'name': 'Internal Testing Key', 'permissions': 'full', 'user': 'test'},
+    'gax10_trial_6k8p2r9w4m7v1t5z8x': {'name': 'Trial Access Key', 'permissions': 'full', 'user': 'trial'},
+    'gax10_stage_2p6k9r4w7t1m5v8z3x': {'name': 'Staging Environment Key', 'permissions': 'full', 'user': 'staging'},
+    'gax10_prod_8w5r9k2t6p1v4z7m3x': {'name': 'Production Deployment Key', 'permissions': 'full', 'user': 'production'},
+    'gax10_api_5t8k2w7r4p9v1z6m3x': {'name': 'General API Access Key', 'permissions': 'full', 'user': 'api'}
 }
 
 def require_api_key_soft(f):
@@ -267,19 +267,19 @@ app = Flask(__name__)
 
 # Production configuration with dual database support
 # Primary database (bonds_data.db) - comprehensive bond data with enrichment
-PRIMARY_DB_PATH = './data/bonds_data.db' if os.path.exists('./data/bonds_data.db') else '/app/data/bonds_data.db'
+PRIMARY_DB_PATH = './bonds_data.db' if os.path.exists('./bonds_data.db') else '/app/bonds_data.db'
 DATABASE_PATH = os.environ.get('DATABASE_PATH', PRIMARY_DB_PATH)
 
 # Secondary database (bloomberg_index.db) - Bloomberg reference data  
-SECONDARY_DB_PATH = './data/bloomberg_index.db' if os.path.exists('./data/bloomberg_index.db') else '/app/data/bloomberg_index.db'
+SECONDARY_DB_PATH = './bloomberg_index.db' if os.path.exists('./bloomberg_index.db') else '/app/bloomberg_index.db'
 SECONDARY_DATABASE_PATH = os.environ.get('SECONDARY_DATABASE_PATH', SECONDARY_DB_PATH)
 
 # ENHANCED: Add validated conventions database path
-DEFAULT_VALIDATED_DB_PATH = './data/validated_quantlib_bonds.db' if os.path.exists('./data/validated_quantlib_bonds.db') else '/app/data/validated_quantlib_bonds.db'
+DEFAULT_VALIDATED_DB_PATH = './validated_quantlib_bonds.db' if os.path.exists('./validated_quantlib_bonds.db') else '/app/validated_quantlib_bonds.db'
 VALIDATED_DB_PATH = os.environ.get('VALIDATED_DB_PATH', DEFAULT_VALIDATED_DB_PATH)
 
 PORT = int(os.environ.get('PORT', 8080))
-VERSION = '9.0.0'
+VERSION = '10.0.0'
 
 # Verify database exists on startup
 if not os.path.exists(DATABASE_PATH):
@@ -317,7 +317,7 @@ def health_check():
     
     return jsonify({
         'status': 'healthy',
-        'service': 'Google Analysis 9 Production API',
+        'service': 'Google Analysis 10 Production API',
         'version': VERSION,
         'timestamp': datetime.now().isoformat(),
         'environment': 'production',
@@ -445,7 +445,23 @@ def parse_and_calculate_bond():
                     predicted_conventions['user_override_applied'] = True
         
         # Calculate accrued interest and analytics
-        settlement_date = data.get('settlement_date', get_prior_month_end())
+        def get_settlement_date(settlement_date=None):
+            if settlement_date:
+                try:
+                    from datetime import datetime
+                    datetime.strptime(settlement_date, "%Y-%m-%d")
+                    return settlement_date
+                except ValueError:
+                    pass
+            # Default: Prior month end
+            from datetime import datetime, timedelta
+            today = datetime.now()
+            first_day_current_month = today.replace(day=1)
+            last_day_previous_month = first_day_current_month - timedelta(days=1)
+            return last_day_previous_month.strftime("%Y-%m-%d")
+        
+        # Get settlement date and price
+        settlement_date = get_settlement_date(data.get('settlement_date'))
         price = data.get('price', 100.0)
         
         calculation_inputs = {
@@ -736,7 +752,7 @@ def database_info():
 def version_info():
     """Production API version information"""
     return jsonify({
-        'service': 'Google Analysis 9 Production API',
+        'service': 'Google Analysis 10 Production API',
         'version': VERSION,
         'api_version': 'v1',
         'environment': 'production',
@@ -774,7 +790,7 @@ def version_info():
     })
 
 if __name__ == '__main__':
-    logger.info(f"🚀 Starting Google Analysis 9 Production API with Business Responses")
+    logger.info(f"🚀 Starting Google Analysis 10 Production API with Business Responses")
     logger.info(f"📊 Version: {VERSION}")
     logger.info(f"🏭 Environment: Production")
     logger.info(f"💾 Database: {DATABASE_PATH}")
