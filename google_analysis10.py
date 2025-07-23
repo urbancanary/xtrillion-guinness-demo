@@ -17,6 +17,9 @@ import json
 # 🔧 TREASURY BOND FIX: Import Treasury detection for correct compounding
 from treasury_bond_fix import TreasuryBondDetector, get_correct_quantlib_compounding
 
+# 🔧 ENHANCED PARSER INTEGRATION: Import SmartBondParser for fallback when no ISIN
+from bond_description_parser import SmartBondParser
+
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -35,6 +38,37 @@ VALIDATED_DB_PATH = os.environ.get('VALIDATED_DB_PATH', DEFAULT_VALIDATED_DB_PAT
 # ========================================================================
 # ENHANCED BOND CONVENTIONS FUNCTIONS
 # ========================================================================
+
+def extract_bond_description_for_treasury_detection(bond_data, isin):
+    """Extract bond description for treasury detection from various sources"""
+    
+    # Try to get description from bond_data
+    if isinstance(bond_data, dict):
+        description_fields = ['description', 'original_description', 'bond_name', 'name', 'issuer']
+        for field in description_fields:
+            desc = bond_data.get(field)
+            if desc and isinstance(desc, str) and len(desc.strip()) > 0:
+                return desc.strip()
+    
+    # For synthetic ISIN like "PARSED_T_3.0_20520815", reconstruct Treasury description
+    if isin and isin.startswith('PARSED_T_'):
+        parts = isin.split('_')
+        if len(parts) >= 4:
+            ticker = parts[1]  # T
+            coupon = parts[2]  # 3.0
+            date_part = parts[3]  # 20520815
+            
+            if len(date_part) == 8:
+                year = date_part[:4]   # 2052
+                month = date_part[4:6] # 08
+                day = date_part[6:8]   # 15
+                
+                # Reconstruct Treasury description: "T 3.0 15/08/2052"
+                reconstructed = f"{ticker} {coupon} {day}/{month}/{year}"
+                logger.info(f"🔧 Reconstructed Treasury description: {reconstructed} from {isin}")
+                return reconstructed
+    
+    return None
 
 def fetch_bond_conventions_from_validated_db(isin, validated_db_path):
     """
@@ -155,7 +189,33 @@ def identify_isin_column(df):
                 logger.debug(f"Identified ISIN column by pattern contain: {column}")
                 return column
 
-    raise ValueError("No ISIN column found")
+    # 🔧 ENHANCED PARSER INTEGRATION: Return fallback instead of raising error
+    logger.warning("No ISIN column found - will attempt bond description parsing fallback")
+    return "BOND_DESCRIPTION_FALLBACK"
+
+# Function to identify bond description column (for parser fallback)
+def identify_bond_description_column(df):
+    """Identify column containing bond descriptions/names for parser fallback"""
+    logger.debug("Identifying Bond Description column")
+    description_patterns = ['description', 'bond_ename', 'name', 'security', 'instrument']
+    
+    for pattern in description_patterns:
+        for column in df.columns:
+            if re.search(pattern, str(column).strip(), re.IGNORECASE):
+                logger.debug(f"Identified Bond Description column: {column}")
+                return column
+    
+    # If no specific description column found, try to find a text column
+    for column in df.columns:
+        # Check if column contains text that looks like bond descriptions
+        sample_values = df[column].dropna().astype(str).head(3)
+        for value in sample_values:
+            if any(indicator in value.upper() for indicator in ['%', 'TREASURY', 'CORP', 'INC', 'LTD']):
+                logger.debug(f"Identified Bond Description column by content analysis: {column}")
+                return column
+    
+    logger.warning("No bond description column found")
+    return None
 
 # Function to identify the price column
 def identify_price_column(df):
@@ -520,9 +580,9 @@ def get_dual_database_manager():
     """
     global _dual_db_manager
     if _dual_db_manager is None:
-        # Get database paths from environment or defaults
-        primary_db = os.environ.get('DATABASE_PATH', './../data/bonds_data.db')
-        secondary_db = os.environ.get('SECONDARY_DATABASE_PATH', './../data/bloomberg_index.db')
+        # Get database paths from environment or use CORRECT defaults
+        primary_db = os.environ.get('DATABASE_PATH', './bonds_data.db')  # FIXED: Current directory
+        secondary_db = os.environ.get('SECONDARY_DATABASE_PATH', './bloomberg_index.db')  # FIXED: Current directory
         
         # Only use secondary if it exists
         if not os.path.exists(secondary_db):
@@ -628,34 +688,42 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
         else:
             period = ql.Period(ql.Semiannual)  # Default fallback
 
-        # 🏛️ TREASURY BOND METHOD 3: Use proper issue date for Treasury bonds
+        # 🏛️ FIXED TREASURY SCHEDULE: Use proper issue date like Method 1
         is_treasury_bond = (
             any(keyword in str(isin).upper() for keyword in ['US912', 'TREASURY']) or
             (ticker_conventions and ticker_conventions.get('treasury_override', False)) or
-            (ticker_conventions and 'treasury' in ticker_conventions.get('source', '').lower())
+            (ticker_conventions and 'treasury' in ticker_conventions.get('source', '').lower()) or
+            # Detect synthetic Treasury bonds by ISIN pattern
+            ('PARSED_T_' in str(isin).upper()) or
+            # Detect Treasury bonds by ticker conventions (T ticker = Treasury)
+            (ticker_conventions and any(t_pattern in str(ticker_conventions) for t_pattern in ['ActualActual_Bond', "'T'", '"T"']))
         )
         
+        # DEBUG: Log Treasury detection details
+        logger.info(f"🔍 TREASURY DETECTION DEBUG for {isin}:")
+        logger.info(f"   ISIN check (US912/TREASURY): {any(keyword in str(isin).upper() for keyword in ['US912', 'TREASURY'])}")
+        logger.info(f"   Treasury override: {ticker_conventions and ticker_conventions.get('treasury_override', False) if ticker_conventions else False}")
+        logger.info(f"   Source contains treasury: {ticker_conventions and 'treasury' in ticker_conventions.get('source', '').lower() if ticker_conventions else False}")
+        logger.info(f"   PARSED_T_ pattern: {'PARSED_T_' in str(isin).upper()}")
+        logger.info(f"   ActualActual_Bond pattern: {ticker_conventions and any(t_pattern in str(ticker_conventions) for t_pattern in ['ActualActual_Bond']) if ticker_conventions else False}")
+        logger.info(f"   Final is_treasury_bond: {is_treasury_bond}")
+        
+        
         if is_treasury_bond:
-            logger.info(f"🤖 PURE QUANTLIB: Using market conventions for Treasury {isin}")
+            logger.info(f"🏛️ TREASURY FIX: Using proper issue date schedule like Method 1 for {isin}")
+            # Calculate proper issue date like Method 1 does
+            bond_term_years = maturity_date.year() - settlement_date.year() + 1
+            issue_date = ql.Date(maturity_date.dayOfMonth(), maturity_date.month(), 
+                                maturity_date.year() - bond_term_years)
             
-            # 🤖 Let QuantLib determine proper Treasury schedule automatically
-            # Use standard Treasury pattern but let QuantLib handle all calculations
-            if maturity_date.month() == 8 and maturity_date.dayOfMonth() == 15:
-                # Aug 15 maturity: use standard Feb 15 pattern (let QuantLib determine year)
-                schedule_start = ql.Date(15, 2, settlement_date.year() if settlement_date.month() >= 2 else settlement_date.year() - 1)
-            elif maturity_date.month() == 2 and maturity_date.dayOfMonth() == 15:
-                # Feb 15 maturity: use standard Aug 15 pattern
-                schedule_start = ql.Date(15, 8, settlement_date.year() - 1 if settlement_date.month() < 8 else settlement_date.year() - 2)
-            else:
-                # Other Treasury patterns: let QuantLib use reasonable schedule start
-                schedule_start = calendar.advance(settlement_date, ql.Period(-6, ql.Months))
+            # Ensure issue date is before settlement date for proper accrued interest
+            while issue_date >= settlement_date:
+                issue_date = issue_date - ql.Period(1, ql.Years)
             
-            # Create schedule - QuantLib handles all coupon date calculations
-            schedule = ql.Schedule(schedule_start, maturity_date, period,
+            schedule = ql.Schedule(issue_date, maturity_date, period,
                                    calendar, business_conv, business_conv,
                                    ql.DateGeneration.Backward, False)
-            
-            logger.info(f"🤖 QuantLib schedule start: {schedule_start} (market conventions, no manual calculations)")
+            logger.info(f"🏛️ Treasury schedule: issue_date={issue_date} → maturity={maturity_date}")
         else:
             # Standard schedule for non-Treasury bonds
             schedule = ql.Schedule(settlement_date, maturity_date, period,
@@ -682,14 +750,24 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
             compounding_freq = ql.Semiannual
             is_treasury = True
         else:
-            # Fallback to general detection
-            compounding_freq = get_correct_quantlib_compounding(isin, description=None, issuer=None)
-            is_treasury = (compounding_freq == ql.Semiannual)
+            # Handle both Method 1 (real ISINs) and Method 2 (synthetic ISINs) correctly
+            bond_data = {'isin': isin, 'coupon': coupon, 'maturity': maturity_date}
+            bond_description = extract_bond_description_for_treasury_detection(bond_data, isin)
             
-            if is_treasury:
-                logger.info(f"🏛️ Treasury bond detected ({isin}): Using SEMIANNUAL compounding")
+            if bond_description:
+                # Method 2: Synthetic ISINs with reconstructable descriptions (Treasury fix working)
+                compounding_freq = get_correct_quantlib_compounding(isin, description=bond_description, issuer=bond_description)
+                is_treasury = (compounding_freq == ql.Semiannual)
+                logger.info(f"🏛️ Treasury bond detected via description '{bond_description}' ({isin}): Using SEMIANNUAL compounding")
             else:
-                logger.debug(f"🏢 Corporate bond ({isin}): Using ANNUAL compounding")
+                # Method 1: Real ISINs without descriptions (preserve original behavior)
+                compounding_freq = get_correct_quantlib_compounding(isin, description=None, issuer=None)
+                is_treasury = (compounding_freq == ql.Semiannual)
+                
+                if is_treasury:
+                    logger.info(f"🏛️ Treasury bond detected via ISIN pattern ({isin}): Using SEMIANNUAL compounding")
+                else:
+                    logger.debug(f"🏢 Corporate bond ({isin}): Using ANNUAL compounding")
 
         # Calculate yield with proper conventions
         bond_yield = fixed_rate_bond.bondYield(clean_price, day_count, ql.Compounded, compounding_freq)
@@ -865,14 +943,24 @@ def calculate_bond_metrics_using_shared_engine(isin, coupon, maturity_date, pric
             compounding_freq = ql.Semiannual
             is_treasury = True
         else:
-            # Fallback to general detection
-            compounding_freq = get_correct_quantlib_compounding(isin, description=None, issuer=None)
-            is_treasury = (compounding_freq == ql.Semiannual)
+            # Handle both Method 1 (real ISINs) and Method 2 (synthetic ISINs) correctly
+            bond_data = {'isin': isin, 'coupon': coupon, 'maturity': maturity_date}
+            bond_description = extract_bond_description_for_treasury_detection(bond_data, isin)
             
-            if is_treasury:
-                logger.info(f"🏛️ Treasury bond detected ({isin}): Using SEMIANNUAL compounding")
+            if bond_description:
+                # Method 2: Synthetic ISINs with reconstructable descriptions (Treasury fix working)
+                compounding_freq = get_correct_quantlib_compounding(isin, description=bond_description, issuer=bond_description)
+                is_treasury = (compounding_freq == ql.Semiannual)
+                logger.info(f"🏛️ Treasury bond detected via description '{bond_description}' ({isin}): Using SEMIANNUAL compounding")
             else:
-                logger.debug(f"🏢 Corporate bond ({isin}): Using ANNUAL compounding")
+                # Method 1: Real ISINs without descriptions (preserve original behavior)
+                compounding_freq = get_correct_quantlib_compounding(isin, description=None, issuer=None)
+                is_treasury = (compounding_freq == ql.Semiannual)
+                
+                if is_treasury:
+                    logger.info(f"🏛️ Treasury bond detected via ISIN pattern ({isin}): Using SEMIANNUAL compounding")
+                else:
+                    logger.debug(f"🏢 Corporate bond ({isin}): Using ANNUAL compounding")
 
         # Calculate yield with proper conventions
         bond_yield = fixed_rate_bond.bondYield(clean_price, day_count, ql.Compounded, compounding_freq)
@@ -987,11 +1075,28 @@ def process_bonds_without_weightings(data, db_path, record_number=None, validate
     # Strip column names of whitespace
     input_df.columns = input_df.columns.str.strip()
 
-    try:
-        isin_column = identify_isin_column(input_df)
-    except ValueError as e:
-        logger.error(f"Error: {e}")
-        return pd.DataFrame([{'error': str(e)}])
+    # 🔧 ENHANCED PARSER INTEGRATION: Handle ISIN column identification with fallback
+    isin_column = identify_isin_column(input_df)
+    use_parser_fallback = (isin_column == "BOND_DESCRIPTION_FALLBACK")
+    
+    if use_parser_fallback:
+        logger.info("🔧 ENHANCED PARSER FALLBACK: No ISIN column found, using bond description parser")
+        description_column = identify_bond_description_column(input_df)
+        if not description_column:
+            logger.error("❌ No bond description column found for parser fallback")
+            return pd.DataFrame([{'error': 'No ISIN or bond description column found'}])
+        
+        # Initialize the SmartBondParser
+        try:
+            parser = SmartBondParser('./bonds_data.db', './validated_quantlib_bonds.db')
+            logger.info("✅ SmartBondParser initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize SmartBondParser: {e}")
+            return pd.DataFrame([{'error': f'Parser initialization failed: {e}'}])
+    else:
+        logger.info(f"✅ Using ISIN column: {isin_column}")
+        parser = None
+        description_column = None
 
     try:
         price_column = identify_price_column(input_df)
@@ -1004,9 +1109,95 @@ def process_bonds_without_weightings(data, db_path, record_number=None, validate
         date_column = None
 
     results = []
+    
+    # Initialize record number for tracking
+    if record_number is None:
+        record_number = 1
 
     # Inside the loop that processes each row
-    for _, row in input_df.iterrows():
+    for row_index, row in input_df.iterrows():
+        # 🔧 ENHANCED PARSER INTEGRATION: Handle both ISIN and description-based processing
+        if use_parser_fallback:
+            # Parser fallback mode - use bond description
+            bond_description = row.get(description_column)
+            price = row.get(price_column) if price_column else None
+            trade_date = row.get(date_column) if date_column else None
+            
+            logger.debug(f"Processing row (PARSER MODE) - Description: {bond_description}, Price: {price}, Trade Date: {trade_date}")
+            
+            if pd.isna(bond_description) or bond_description == '':
+                logger.debug(f"Skipping row due to missing bond description: {row}")
+                continue
+            
+            # Parse the bond description
+            try:
+                parsed_bond = parser.parse_bond_description(str(bond_description))
+                if not parsed_bond:
+                    logger.warning(f"❌ Failed to parse bond description: {bond_description}")
+                    results.append({
+                        'bond_description': bond_description, 
+                        'error': f'Could not parse bond description: {bond_description}',
+                        'record_number': record_number
+                    })
+                    continue
+                
+                logger.info(f"✅ Parsed bond: {parsed_bond['issuer']} {parsed_bond['coupon']}% {parsed_bond['maturity']}")
+                
+                # Get predicted conventions
+                conventions = parser.predict_most_likely_conventions(parsed_bond)
+                logger.info(f"🎯 Predicted conventions: {conventions.get('day_count')}|{conventions.get('business_convention')}|{conventions.get('frequency')}")
+                
+                # Use parser's calculation method which integrates with the portfolio system
+                if price is None or pd.isna(price):
+                    price = 100.0  # Default price if not provided
+                    logger.warning(f"Using default price 100.0 for parsed bond")
+                
+                settlement_date = trade_date if trade_date else fetch_latest_trade_date(db_path)
+                
+                calc_result = parser.calculate_accrued_interest(
+                    parsed_bond, 
+                    conventions, 
+                    settlement_date=settlement_date, 
+                    price=float(price)
+                )
+                
+                if calc_result.get('calculation_successful'):
+                    logger.info(f"✅ PARSER CALCULATION SUCCESS: {parsed_bond['issuer']} - yield={calc_result['yield_to_maturity']:.3f}%, duration={calc_result['duration']:.2f}yr")
+                    
+                    results.append({
+                        'bond_description': bond_description,
+                        'issuer': parsed_bond['issuer'],
+                        'coupon': parsed_bond['coupon'],
+                        'maturity': parsed_bond['maturity'],
+                        'yield': calc_result['yield_to_maturity'],
+                        'duration': calc_result['duration'],
+                        'accrued_interest': calc_result['accrued_interest'],
+                        'price': float(price),
+                        'trade_date': settlement_date,
+                        'parsing_method': 'enhanced_parser_fallback',
+                        'conventions_used': conventions,
+                        'record_number': record_number
+                    })
+                else:
+                    logger.error(f"❌ PARSER CALCULATION FAILED: {calc_result.get('error', 'Unknown error')}")
+                    results.append({
+                        'bond_description': bond_description,
+                        'error': calc_result.get('error', 'Parser calculation failed'),
+                        'record_number': record_number
+                    })
+                
+                continue  # Skip to next row since we processed with parser
+                
+            except Exception as e:
+                logger.error(f"❌ Parser processing error for '{bond_description}': {e}")
+                results.append({
+                    'bond_description': bond_description,
+                    'error': f'Parser processing error: {str(e)}',
+                    'record_number': record_number
+                })
+                continue
+        
+        # Standard ISIN-based processing (existing logic)
         isin = row.get(isin_column)
         price = row.get(price_column) if price_column else None
         trade_date = row.get(date_column) if date_column else None
@@ -1130,11 +1321,28 @@ def process_bonds_with_weightings(data, db_path, record_number=None, validated_d
     input_df.columns = input_df.columns.str.strip()
     logger.debug(f"Data columns: {input_df.columns}")
 
-    try:
-        isin_column = identify_isin_column(input_df)
-    except ValueError as e:
-        logger.error(f"Error: {e}")
-        return pd.DataFrame([{'error': str(e)}])
+    # 🔧 ENHANCED PARSER INTEGRATION: Handle ISIN column identification with fallback
+    isin_column = identify_isin_column(input_df)
+    use_parser_fallback = (isin_column == "BOND_DESCRIPTION_FALLBACK")
+    
+    if use_parser_fallback:
+        logger.info("🔧 ENHANCED PARSER FALLBACK: No ISIN column found, using bond description parser")
+        description_column = identify_bond_description_column(input_df)
+        if not description_column:
+            logger.error("❌ No bond description column found for parser fallback")
+            return pd.DataFrame([{'error': 'No ISIN or bond description column found'}])
+        
+        # Initialize the SmartBondParser
+        try:
+            parser = SmartBondParser('./bonds_data.db', './validated_quantlib_bonds.db')
+            logger.info("✅ SmartBondParser initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize SmartBondParser: {e}")
+            return pd.DataFrame([{'error': f'Parser initialization failed: {e}'}])
+    else:
+        logger.info(f"✅ Using ISIN column: {isin_column}")
+        parser = None
+        description_column = None
 
     try:
         price_column = identify_price_column(input_df)
@@ -1157,6 +1365,90 @@ def process_bonds_with_weightings(data, db_path, record_number=None, validated_d
 
     results = []
     for _, row in input_df.iterrows():
+        # 🔧 ENHANCED PARSER INTEGRATION: Handle both ISIN and description-based processing
+        if use_parser_fallback:
+            # Parser fallback mode - use bond description
+            bond_description = row.get(description_column)
+            price = row.get(price_column) if price_column else None
+            trade_date = row.get(date_column) if date_column else None
+            weightings = row.get(weightings_column) if weightings_present else 100
+            
+            logger.debug(f"Processing row (PARSER MODE) - Description: {bond_description}, Price: {price}, Trade Date: {trade_date}, Weightings: {weightings}")
+            
+            if pd.isna(bond_description) or bond_description == '':
+                logger.debug(f"Skipping row due to missing bond description: {row}")
+                continue
+            
+            # Parse the bond description
+            try:
+                parsed_bond = parser.parse_bond_description(str(bond_description))
+                if not parsed_bond:
+                    logger.warning(f"❌ Failed to parse bond description: {bond_description}")
+                    results.append({
+                        'bond_description': bond_description, 
+                        'error': f'Could not parse bond description: {bond_description}',
+                        'record_number': record_number,
+                        'weightings': weightings
+                    })
+                    continue
+                
+                logger.info(f"✅ Parsed bond: {parsed_bond['issuer']} {parsed_bond['coupon']}% {parsed_bond['maturity']}")
+                
+                # Get predicted conventions
+                conventions = parser.predict_most_likely_conventions(parsed_bond)
+                logger.info(f"🎯 Predicted conventions: {conventions.get('day_count')}|{conventions.get('business_convention')}|{conventions.get('frequency')}")
+                
+                # Use parser's calculation method which integrates with the portfolio system
+                if price is None or pd.isna(price):
+                    price = 100.0  # Default price if not provided
+                    logger.warning(f"Using default price 100.0 for parsed bond")
+                
+                settlement_date = trade_date if trade_date else fetch_latest_trade_date(db_path)
+                
+                calc_result = parser.calculate_accrued_interest(
+                    parsed_bond, 
+                    conventions, 
+                    settlement_date=settlement_date, 
+                    price=float(price)
+                )
+                
+                if calc_result.get('calculation_successful'):
+                    logger.info(f"✅ PARSER CALCULATION SUCCESS: {parsed_bond['issuer']} - yield={calc_result['yield_to_maturity']:.3f}%, duration={calc_result['duration']:.2f}yr")
+                    
+                    results.append({
+                        'bond_description': bond_description,
+                        'issuer': parsed_bond['issuer'],
+                        'coupon': parsed_bond['coupon'],
+                        'maturity': parsed_bond['maturity'],
+                        'yield': calc_result['yield_to_maturity'],
+                        'duration': calc_result['duration'],
+                        'accrued_interest': calc_result['accrued_interest'],
+                        'spread': calc_result.get('spread_to_treasury', 0),
+                        'error': None,
+                        'record_number': record_number,
+                        'weightings': weightings
+                    })
+                else:
+                    logger.error(f"❌ Parser calculation failed for {bond_description}: {calc_result.get('error', 'Unknown error')}")
+                    results.append({
+                        'bond_description': bond_description,
+                        'error': calc_result.get('error', 'Parser calculation failed'),
+                        'record_number': record_number,
+                        'weightings': weightings
+                    })
+                    
+            except Exception as e:
+                logger.error(f"❌ Exception during parser processing for {bond_description}: {e}")
+                results.append({
+                    'bond_description': bond_description,
+                    'error': f'Parser exception: {str(e)}',
+                    'record_number': record_number,
+                    'weightings': weightings
+                })
+                
+            continue  # Skip the rest of the ISIN-based processing
+            
+        # Original ISIN-based processing for when parser fallback is not needed
         isin = row.get(isin_column)
         price = row.get(price_column) if price_column else None
         trade_date = row.get(date_column) if date_column else None
@@ -1263,7 +1555,9 @@ def process_bonds_with_weightings(data, db_path, record_number=None, validated_d
             treasury_handle = create_treasury_curve(yield_dict, trade_date_ql)
 
             # Enhanced comprehensive fallback system
-            bond_data = enhanced_fetch_bond_data_with_fallback(isin, db_path, row, price)
+            # 🔧 FIX: Convert pandas Series to dict to avoid "Series is ambiguous" error
+            row_dict = row.to_dict() if hasattr(row, 'to_dict') else row
+            bond_data = enhanced_fetch_bond_data_with_fallback(isin, db_path, row_dict, price)
 
             if bond_data is not None:
                 # Success from enhanced fallback (database, CSV, ISIN patterns, parser, or synthesis)
@@ -1319,7 +1613,9 @@ def process_bonds_with_weightings(data, db_path, record_number=None, validated_d
         except ValueError as e:
             results.append({'isin': isin, 'error': str(e), 'record_number': record_number})
             logger.debug(f"Error processing ISIN {isin}: {e}")
-            continue
+            
+        # Increment record number for next iteration
+        record_number += 1
 
     results_df = pd.DataFrame(results)
     logger.debug(f"Results before cash row: {results_df}")
@@ -1405,7 +1701,22 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
 
         # 🔧 TREASURY BOND DETECTION: Move Treasury detection earlier for schedule creation
         # Check ticker conventions first for Treasury override
-        is_treasury_from_conventions = ticker_conventions.get('treasury_override', False) or ticker_conventions.get('source') == 'treasury_override' if ticker_conventions else False
+        is_treasury_from_conventions = (
+            (ticker_conventions and ticker_conventions.get('treasury_override', False)) or
+            (ticker_conventions and ticker_conventions.get('source') == 'treasury_override') or
+            # 🏛️ FIXED: Detect synthetic Treasury bonds by ISIN pattern and ticker conventions
+            ('PARSED_T_' in str(isin).upper()) or
+            # Detect Treasury bonds by ActualActual_Bond day count (typical for Treasuries)
+            (ticker_conventions and ticker_conventions.get('day_count') == 'ActualActual_Bond')
+        ) if ticker_conventions else False
+        
+        # DEBUG: Log Treasury detection
+        logger.info(f"🔍 SYNTHETIC TREASURY DETECTION for {isin}:")
+        logger.info(f"   treasury_override: {ticker_conventions and ticker_conventions.get('treasury_override', False) if ticker_conventions else False}")
+        logger.info(f"   source=treasury_override: {ticker_conventions and ticker_conventions.get('source') == 'treasury_override' if ticker_conventions else False}")
+        logger.info(f"   PARSED_T_ pattern: {'PARSED_T_' in str(isin).upper()}")
+        logger.info(f"   ActualActual_Bond: {ticker_conventions and ticker_conventions.get('day_count') == 'ActualActual_Bond' if ticker_conventions else False}")
+        logger.info(f"   Final is_treasury_from_conventions: {is_treasury_from_conventions}")
 
         # 🔧 TREASURY BOND SCHEDULE FIX: Use proper coupon payment schedule
         # For Treasury bonds, create schedule from actual coupon payment dates, not settlement date
@@ -1453,14 +1764,24 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
             compounding_freq = ql.Semiannual
             is_treasury = True
         else:
-            # Fallback to general detection
-            compounding_freq = get_correct_quantlib_compounding(isin, description=None, issuer=None)
-            is_treasury = (compounding_freq == ql.Semiannual)
+            # Handle both Method 1 (real ISINs) and Method 2 (synthetic ISINs) correctly
+            bond_data = {'isin': isin, 'coupon': coupon, 'maturity': maturity_date}
+            bond_description = extract_bond_description_for_treasury_detection(bond_data, isin)
             
-            if is_treasury:
-                logger.info(f"🏛️ Treasury bond detected ({isin}): Using SEMIANNUAL compounding")
+            if bond_description:
+                # Method 2: Synthetic ISINs with reconstructable descriptions (Treasury fix working)
+                compounding_freq = get_correct_quantlib_compounding(isin, description=bond_description, issuer=bond_description)
+                is_treasury = (compounding_freq == ql.Semiannual)
+                logger.info(f"🏛️ Treasury bond detected via description '{bond_description}' ({isin}): Using SEMIANNUAL compounding")
             else:
-                logger.debug(f"🏢 Corporate bond ({isin}): Using ANNUAL compounding")
+                # Method 1: Real ISINs without descriptions (preserve original behavior)
+                compounding_freq = get_correct_quantlib_compounding(isin, description=None, issuer=None)
+                is_treasury = (compounding_freq == ql.Semiannual)
+                
+                if is_treasury:
+                    logger.info(f"🏛️ Treasury bond detected via ISIN pattern ({isin}): Using SEMIANNUAL compounding")
+                else:
+                    logger.debug(f"🏢 Corporate bond ({isin}): Using ANNUAL compounding")
 
         # Calculate yield with proper conventions
         bond_yield = fixed_rate_bond.bondYield(clean_price, day_count, ql.Compounded, compounding_freq)

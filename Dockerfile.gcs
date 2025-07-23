@@ -1,0 +1,70 @@
+FROM python:3.11-slim
+
+# Install system dependencies including gcloud CLI
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Google Cloud SDK
+RUN curl https://sdk.cloud.google.com | bash && \
+    /root/google-cloud-sdk/install.sh --quiet
+ENV PATH="/root/google-cloud-sdk/bin:${PATH}"
+
+WORKDIR /app
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application files (NO databases - they'll be downloaded from GCS)
+COPY *.py .
+COPY data/.env ./data/
+RUN rm -rf archive/ __pycache__/ *.log test_*.py debug_*.py
+
+# Create data directory for GCS downloads
+RUN mkdir -p /app/data
+
+# Create startup script that downloads databases from GCS
+RUN echo '#!/bin/bash' > /app/download_and_start.sh && \
+    echo 'set -e' >> /app/download_and_start.sh && \
+    echo 'echo "🚀 Starting XTrillion-GA10 with GCS database download..."' >> /app/download_and_start.sh && \
+    echo 'echo "📡 GCS Bucket: $GCS_BUCKET"' >> /app/download_and_start.sh && \
+    echo 'echo "🔐 Credentials: $GOOGLE_APPLICATION_CREDENTIALS"' >> /app/download_and_start.sh && \
+    echo '' >> /app/download_and_start.sh && \
+    echo '# Download databases from GCS' >> /app/download_and_start.sh && \
+    echo 'if [ -n "$GCS_BUCKET" ]; then' >> /app/download_and_start.sh && \
+    echo '    echo "🔽 Downloading databases from GCS bucket: $GCS_BUCKET"' >> /app/download_and_start.sh && \
+    echo '    gsutil cp gs://$GCS_BUCKET/bonds_data.db /app/data/ || echo "⚠️ bonds_data.db not found in GCS"' >> /app/download_and_start.sh && \
+    echo '    gsutil cp gs://$GCS_BUCKET/validated_quantlib_bonds.db /app/data/ || echo "⚠️ validated_quantlib_bonds.db not found in GCS"' >> /app/download_and_start.sh && \
+    echo '    gsutil cp gs://$GCS_BUCKET/bloomberg_index.db /app/data/ || echo "⚠️ bloomberg_index.db not found in GCS"' >> /app/download_and_start.sh && \
+    echo '    echo "✅ Database download complete"' >> /app/download_and_start.sh && \
+    echo 'else' >> /app/download_and_start.sh && \
+    echo '    echo "⚠️ No GCS_BUCKET specified, using local databases if available"' >> /app/download_and_start.sh && \
+    echo 'fi' >> /app/download_and_start.sh && \
+    echo '' >> /app/download_and_start.sh && \
+    echo '# List downloaded files' >> /app/download_and_start.sh && \
+    echo 'echo "📊 Available database files:"' >> /app/download_and_start.sh && \
+    echo 'ls -lh /app/data/*.db 2>/dev/null || echo "No database files found"' >> /app/download_and_start.sh && \
+    echo '' >> /app/download_and_start.sh && \
+    echo '# Start the API server' >> /app/download_and_start.sh && \
+    echo 'echo "🎯 Starting XTrillion-GA10 API server..."' >> /app/download_and_start.sh && \
+    echo 'python3 google_analysis10_api.py' >> /app/download_and_start.sh && \
+    chmod +x /app/download_and_start.sh
+
+# Set environment variables
+ENV PORT=8080
+ENV PYTHONPATH="/app"
+ENV ENVIRONMENT="production"
+ENV GCS_BUCKET="json-receiver-databases"
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Expose port
+EXPOSE 8080
+
+# Start with GCS download
+CMD ["/app/download_and_start.sh"]
