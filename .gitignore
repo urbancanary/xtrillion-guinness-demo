@@ -109,3 +109,10 @@ validations/
 !google_analysis9_api.py
 !bond_description_parser.py
 !treasury_detector.py
+*.db
+*.db-shm
+*.db-wal
+*.db
+*.db-shm
+*.db-wal
+six_way_analysis_*.db
