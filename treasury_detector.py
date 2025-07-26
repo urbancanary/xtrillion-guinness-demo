@@ -151,31 +151,7 @@ class DualDatabaseTreasuryDetector:
         return results
 
 
-def enhance_bond_processing_with_treasuries(portfolio_data, primary_db_path, secondary_db_path=None):
-    """
-    Enhanced function for dual database treasury detection
-    
-    This function is called from google_analysis9_api.py and works with the dual database system.
-    It detects treasuries but doesn't modify databases - the dual database manager handles data lookup.
-    """
-    
-    # Get secondary database path if not provided
-    if not secondary_db_path:
-        import os
-        secondary_db_path = os.environ.get('SECONDARY_DATABASE_PATH')
-    
-    detector = DualDatabaseTreasuryDetector(primary_db_path, secondary_db_path)
-    
-    # Extract bond data for processing
-    if isinstance(portfolio_data, dict) and 'data' in portfolio_data:
-        bonds_list = portfolio_data['data']
-    else:
-        bonds_list = portfolio_data
-    
-    # Enhance with treasury detection (but don't modify databases)
-    enhancement_results = detector.enhance_portfolio_with_treasuries(bonds_list)
-    
-    return enhancement_results
+
 
 
 # Backward compatibility function

@@ -103,12 +103,12 @@ validations/
 # Cleanup this mess with vulture later
 *calculator*.py
 *comparison*.py
-*test*.py
 !bloomberg_accrued_calculator.py
 !google_analysis9.py
 !google_analysis9_api.py
 !bond_description_parser.py
 !treasury_detector.py
+!comprehensive_6way_tester_FIXED_ENDPOINTS.py
 *.db
 *.db-shm
 *.db-wal

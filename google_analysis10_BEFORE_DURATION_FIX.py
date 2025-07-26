@@ -189,6 +189,11 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
         logger.info(f"{log_prefix} FixedRateBond created successfully.")
 
         # CRITICAL FIX: Don't set pricing engine - it may interfere with yield calculation
+        # yield_curve_handle = ql.YieldTermStructureHandle(ql.FlatForward(calculation_date, 0.03, day_count))
+        # logger.info(f"{log_prefix} Creating DiscountingBondEngine...")
+        # engine = ql.DiscountingBondEngine(yield_curve_handle)
+        # bond.setPricingEngine(engine)
+        # logger.info(f"{log_prefix} Pricing engine set successfully.")
         logger.info(f"{log_prefix} Skipping pricing engine setup for yield calculation accuracy.")
 
         # Handle missing price with a reasonable default (par value)
@@ -198,53 +203,51 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
         
         logger.info(f"{log_prefix} Calculating yield for price {price}...")
         
-        # 🔧 YIELD CALCULATION FIX - Use semiannual frequency for all bonds
-        yield_frequency = ql.Semiannual  # Standard for most bonds
+        # BLOOMBERG-COMPATIBLE FIX: Different frequencies for yield vs duration
+        # Key discovery: Bloomberg uses different compounding frequencies for different calculations
+        yield_frequency = frequency
+        duration_frequency = frequency
         
-        # Step 1: Calculate yield using semiannual frequency
-        bond_yield_decimal = bond.bondYield(
+        if is_treasury:
+            # Bloomberg Treasury methodology discovered through comprehensive testing:
+            # - Yield calculation: Uses Semiannual frequency (matches actual payment frequency)  
+            # - Duration calculation: Uses Annual frequency (Bloomberg's duration methodology)
+            yield_frequency = ql.Semiannual
+            duration_frequency = ql.Annual  # ← THE CRITICAL BLOOMBERG FIX
+            logger.info(f"{log_prefix} Treasury detected: Bloomberg methodology")
+            logger.info(f"{log_prefix} Yield frequency: Semiannual, Duration frequency: Annual")
+        
+        # Step 1: Calculate yield using bond's natural payment frequency
+        bond_yield_raw = bond.bondYield(
             price, 
             day_counter, 
             ql.Compounded, 
-            yield_frequency
+            yield_frequency  # Semiannual for Treasuries
         )
         
-        logger.info(f"{log_prefix} Yield calculated (decimal): {bond_yield_decimal:.6f} ({bond_yield_decimal*100:.5f}%)")
+        bond_yield = bond_yield_raw
+        logger.info(f"{log_prefix} Yield calculated (decimal): {bond_yield:.6f} ({bond_yield*100:.5f}%)")
 
-        # 🔧 DURATION CALCULATION FIX - Apply your brilliant discovery!
-        logger.info(f"{log_prefix} Applying BRILLIANT duration fix...")
-        
-        # Step 2: Convert yield to percentage format for duration calculation
-        yield_percentage = bond_yield_decimal * 100  # Convert 0.048997 → 4.89972
-        logger.info(f"{log_prefix} Yield for duration calc: {bond_yield_decimal:.6f} (decimal) → {yield_percentage:.5f} (percentage)")
-        
-        # Step 3: Calculate duration with percentage yield
-        duration_raw = ql.BondFunctions.duration(
-            bond, yield_percentage, day_counter, ql.Compounded, 
-            yield_frequency, ql.Duration.Modified
+        # Step 2: Calculate duration using Bloomberg's compounding frequency
+        logger.info(f"{log_prefix} Calculating duration with Bloomberg frequency: {duration_frequency}...")
+        duration = ql.BondFunctions.duration(
+            bond, bond_yield, day_counter, ql.Compounded, 
+            duration_frequency,  # Annual for Treasury duration (Bloomberg method)
+            ql.Duration.Modified
         )
-        
-        # Step 4: Scale result to Bloomberg format (multiply by 100)
-        duration = duration_raw * 100  # Convert 0.16347 → 16.347
-        logger.info(f"{log_prefix} Duration: {duration_raw:.6f} (raw) → {duration:.5f} (Bloomberg-compatible)")
+        logger.info(f"{log_prefix} Duration calculated: {duration}")
 
-        # 🔧 CONVEXITY CALCULATION FIX - Use same methodology
-        logger.info(f"{log_prefix} Calculating convexity with same methodology...")
-        convexity_raw = ql.BondFunctions.convexity(
-            bond, yield_percentage, day_counter, ql.Compounded, yield_frequency
-        )
-        convexity = convexity_raw * 100  # Apply same scaling
-        logger.info(f"{log_prefix} Convexity: {convexity_raw:.6f} (raw) → {convexity:.5f} (scaled)")
+        logger.info(f"{log_prefix} Calculating convexity...")
+        convexity = ql.BondFunctions.convexity(bond, bond_yield, day_counter, ql.Compounded, calculation_frequency)
+        logger.info(f"{log_prefix} Convexity calculated: {convexity}")
         
-        logger.info(f"{log_prefix} 🎉 FIXED CALCULATION SUCCESSFUL!")
-        logger.info(f"{log_prefix} 📊 Results: Yield={bond_yield_decimal*100:.5f}%, Duration={duration:.5f}, Convexity={convexity:.2f}")
-        
+        logger.info(f"{log_prefix} Calculation successful.")
         settlement_date_str = f"{settlement_date.year()}-{settlement_date.month():02d}-{settlement_date.dayOfMonth():02d}"
         return {
             'isin': isin,
-            'yield': bond_yield_decimal,  # Return decimal yield for consistency
-            'duration': duration,         # Bloomberg-compatible duration
-            'convexity': convexity,       # Scaled convexity
+            'yield': bond_yield_raw,  # Return original yield in percentage format for display
+            'duration': duration,
+            'convexity': convexity,
             'g_spread': 0, 
             'z_spread': 0,
             'conventions': conventions,

@@ -23,13 +23,13 @@ from collections import Counter
 class SmartBondParser:
     """Intelligent bond description parser with convention prediction"""
     
-    def __init__(self, db_path: str, validated_db_path: str):
+    def __init__(self, db_path: str, validated_db_path: str, bloomberg_db_path: str):
         self.db_path = db_path
         self.validated_db_path = validated_db_path
         self.logger = logging.getLogger(__name__)
         
         # For ticker convention lookup - use bloomberg_index.db
-        self.bloomberg_db_path = self.db_path.replace('bonds_data.db', 'bloomberg_index.db')
+        self.bloomberg_db_path = bloomberg_db_path
         
         # Enhanced parsing patterns for various bond description formats
         self.bond_patterns = [
@@ -691,7 +691,8 @@ class SmartBondParser:
 # Test function
 def test_parser():
     """Test the parser with sample descriptions"""
-    parser = SmartBondParser("./../data/bonds_data.db", "./../data/validated_quantlib_bonds.db")
+    # Corrected to include the bloomberg_db_path for standalone testing
+    parser = SmartBondParser("./../data/bonds_data.db", "./../data/validated_quantlib_bonds.db", "./../data/bloomberg_index.db")
     
     test_descriptions = [
         "T 4.1 02/15/28",
