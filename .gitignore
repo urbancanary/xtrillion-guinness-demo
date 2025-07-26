@@ -1,3 +1,6 @@
+# Google Analysis 10 - Bond Analytics Project
+# Updated .gitignore for public GitHub repository
+
 # Python
 __pycache__/
 *.py[cod]
@@ -47,72 +50,106 @@ Thumbs.db
 *.log
 logs/
 api.log
+deployment.log
+test_run.log
 
-# Database files (keep structure, not data)
-# *.db
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.p12
+*secrets*
+*credentials*
+
+# Database files (exclude real data, keep structure)
+*.db
+*.db-shm
+*.db-wal
+bonds_data.db
+bloomberg_index.db
+bloomberg_index_ticker.db
+portfolio_database.db
+validated_quantlib_bonds.db
+tsys_enhanced.db
+six_way_analysis_*.db
 
 # Temporary files
 *.tmp
 *.temp
 *~
-
-# Results and output files
-*.json
-*.csv
-!portfolio.json
-!requirements.txt
-!package.json
-
-# Backup files
 *.backup*
 *.bak
 
-# Test results
-test_results/
-coverage/
-
-# Documentation builds
-docs/_build/
-
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-# Google Cloud
-.gcloudignore
-*.json
-!requirements.txt
-
-# Docker
-.dockerignore
-
-# Bond analytics specific
-bloomberg_exports/
-analysis/
-archive/
-garbage/
-validations/
+# Results and output files (keep repository clean)
 *results*.json
 *analysis*.json
 *comparison*.json
 *portfolio*.json
-!portfolio.json
+*test_*.json
+*report*.json
+*benchmark*.json
+*comprehensive*.json
+
+# Keep important config files
+!requirements.txt
+!package.json
 !test_portfolio.json
 
-# Cleanup this mess with vulture later
-*calculator*.py
-*comparison*.py
+# Excel and CSV files (usually contain sensitive data)
+*.xlsx
+*.csv
+!sample_*.csv
+!test_*.csv
+
+# Google Cloud and deployment
+.gcloudignore
+gcp-key.json
+service-account.json
+app.yaml
+cloudbuild.yaml
+
+# Docker
+.dockerignore
+
+# Bond analytics specific directories
+bloomberg_exports/
+analysis/
+archive/
+backups_*/
+validated_bonds_export/
+utilities/
+
+# Test results and temporary analysis
+test_results/
+coverage/
+*_test_results_*/
+*_comprehensive_test_*/
+
+# Documentation builds
+docs/_build/
+
+# Word document temporary files
+~$*
+
+# Specific large or sensitive files to exclude
+bbg baseline.xlsx
+*.docx
+!*API*Specification*.docx
+
+# Keep important project files
+!google_analysis10.py
+!google_analysis10_api.py
 !bloomberg_accrued_calculator.py
-!google_analysis9.py
-!google_analysis9_api.py
 !bond_description_parser.py
 !treasury_detector.py
-!comprehensive_6way_tester_FIXED_ENDPOINTS.py
-*.db
-*.db-shm
-*.db-wal
-*.db
-*.db-shm
-*.db-wal
-six_way_analysis_*.db
+!api_cash_flow_extension.py
+!xtrillion_cash_flow_calculator.py
+!bond_master_hierarchy.py
+!README.md
+!Dockerfile
+!requirements.txt
+!deploy*.sh
+!test_enhanced_filters.py
+!implement_ga10_filters.py

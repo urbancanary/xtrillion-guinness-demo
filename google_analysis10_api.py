@@ -23,6 +23,8 @@ from flask import Flask, request, jsonify, render_template_string
 import sys
 import os
 import logging
+
+# Placeholder for enhanced cash flow extension - will be loaded after logger setup
 from datetime import datetime, timedelta
 from calendar import monthrange
 from functools import wraps
@@ -58,6 +60,17 @@ except ImportError as e:
         logger.warning("⚠️ No bond parser available - API will have limited functionality")
 
 # Logger already configured above
+
+# =============================================================================
+# GA10 ENHANCED CASH FLOW EXTENSION (POST-LOGGER SETUP)
+# =============================================================================
+try:
+    from api_cash_flow_extension import add_cash_flow_endpoints
+    ENHANCED_CASH_FLOW_AVAILABLE = True
+    logger.info("🚀 GA10 Enhanced cash flow extension loaded successfully")
+except ImportError as e:
+    logger.warning(f"GA10 Enhanced cash flow extension not available: {e}")
+    ENHANCED_CASH_FLOW_AVAILABLE = False
 
 # =============================================================================
 # UNIVERSAL PARSER INITIALIZATION (PRODUCTION INTEGRATION)
@@ -297,6 +310,13 @@ def format_portfolio_metrics(metrics, response_format='YAS'):
 app = Flask(__name__)
 
 # Initialize Universal Parser for production use
+# Add GA10 enhanced cash flow endpoints if available
+if ENHANCED_CASH_FLOW_AVAILABLE:
+    logger.info("📊 Adding GA10 enhanced cash flow calculation endpoints...")
+    add_cash_flow_endpoints(app)
+    logger.info("✅ GA10 Enhanced cash flow endpoints added successfully")
+else:
+    logger.warning("⚠️ GA10 Enhanced cash flow endpoints not available")
 universal_parser = None
 
 def initialize_universal_parser():
