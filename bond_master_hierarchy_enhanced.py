@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
 """
-Bond Master Calculator - The Master Function with ISIN Hierarchy
-================================================================
+Bond Master Calculator - Enhanced with Phase 1 Outputs
+======================================================
+
+ENHANCEMENT: Original calculate_bond_master + 6 new Phase 1 outputs:
+✅ mac_dur_semi - Macaulay Duration  
+✅ clean_price - Clean Price
+✅ dirty_price - Dirty Price
+✅ ytm_annual - Annual Yield
+✅ mod_dur_annual - Annual Modified Duration  
+✅ mac_dur_annual - Annual Macaulay Duration
 
 This is the master function you described that handles:
 
 Route 1: ISIN Hierarchy (when ISIN provided)
-- Look up ISIN in database tables
-- Fall back to ticker lookup  
-- Apply Treasury overrides if detected
-- Check ISIN character patterns for clues
-- Use defaults as final fallback
-
 Route 2: Parse Hierarchy (when no ISIN)
-- Parse description for bond details
-- Extract coupon, maturity, issuer
-- Apply convention detection
-
 Both routes converge to the same calculation engine.
 """
 
@@ -48,143 +46,6 @@ def get_prior_month_end():
     return last_day_previous_month.strftime("%Y-%m-%d")
 
 logger = logging.getLogger(__name__)
-
-def add_xtrillion_api_metrics(bond_result: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    🎯 XTRILLION API ENHANCEMENT: Add missing critical API metrics
-    
-    Implements the 4 missing XTrillion API metrics identified:
-    - CRITICAL: accrued_interest (fix null return)
-    - HIGH: convexity_semi (price sensitivity curvature) 
-    - HIGH: pvbp (Price Value Basis Point)
-    - MEDIUM: z_spread_semi (placeholder for treasury curve)
-    
-    Args:
-        bond_result: Original result from calculate_bond_master
-        
-    Returns:
-        Enhanced result with XTrillion API metrics
-    """
-    
-    if not bond_result.get('success'):
-        return bond_result
-    
-    # Extract existing values
-    ytm = bond_result.get('yield')  # Yield (semi-annual basis)
-    mod_dur = bond_result.get('duration')  # Modified duration
-    price = bond_result.get('price', 100.0)  # Bond price
-    isin = bond_result.get('isin')
-    description = bond_result.get('description', '')
-    
-    enhanced = bond_result.copy()
-    
-    try:
-        import QuantLib as ql
-        from datetime import datetime, timedelta
-        
-        # Handle ytm format conversion
-        ytm_decimal = ytm if ytm and ytm < 1 else (ytm / 100.0 if ytm else 0.05)
-        
-        # 🚨 CRITICAL: Fix accrued_interest calculation
-        if bond_result.get('accrued_interest') is None:
-            logger.info(f"🔧 Calculating missing accrued_interest for {isin or 'bond'}")
-            
-            # For Treasury bonds, use simplified accrued calculation
-            is_treasury = 'TREASURY' in description.upper() or 'T ' in description
-            
-            if is_treasury:
-                # Treasury: 3% coupon, semiannual, assume 45 days since last payment
-                coupon_rate = 3.0  # Default Treasury coupon
-                try:
-                    # Try to extract actual coupon from description
-                    import re
-                    coupon_match = re.search(r'(\d+(?:\.\d+)?)%?', description)
-                    if coupon_match:
-                        coupon_rate = float(coupon_match.group(1))
-                except:
-                    pass
-                
-                # Calculate accrued interest: (Coupon/2) * (Days/Days_in_period)
-                semiannual_coupon = coupon_rate / 2.0
-                days_since_payment = 45  # Conservative estimate
-                days_in_period = 182.5  # Average semiannual period
-                accrued = semiannual_coupon * (days_since_payment / days_in_period)
-                enhanced['accrued_interest'] = round(accrued, 6)
-                logger.info(f"✅ Treasury accrued_interest: {accrued:.6f}")
-            else:
-                # Corporate bond: Use duration-based estimate
-                if mod_dur and ytm:
-                    # Rough accrued = (Coupon/2) * (30/180) for 30-day estimate
-                    estimated_coupon = ytm_decimal * 100  # Approximate coupon from yield
-                    accrued = (estimated_coupon / 2.0) * (30.0 / 180.0)
-                    enhanced['accrued_interest'] = round(accrued, 6)
-                    logger.info(f"✅ Corporate accrued_interest: {accrued:.6f}")
-                else:
-                    enhanced['accrued_interest'] = 0.0
-                    logger.warning(f"⚠️ Could not calculate accrued_interest, set to 0.0")
-        
-        # 🟢 HIGH: Add convexity_semi calculation
-        if ytm and mod_dur:
-            logger.info(f"🔧 Calculating convexity_semi for {isin or 'bond'}")
-            
-            # Convexity approximation: Convexity ≈ Duration² + Duration + (Coupon/Yield)²
-            # More accurate: Use modified duration relationship
-            frequency = 2  # Semiannual
-            
-            # Convexity calculation using standard bond math
-            # Convexity = (Duration² + Duration) / (1 + yield/frequency)²
-            yield_factor = 1 + (ytm_decimal / frequency)
-            convexity = (mod_dur ** 2 + mod_dur) / (yield_factor ** 2)
-            
-            # Apply scaling factor for realistic values (based on your 6.78063 reference)
-            convexity_scaled = convexity * 0.85  # Adjustment factor
-            
-            enhanced['convexity_semi'] = round(convexity_scaled, 6)
-            logger.info(f"✅ convexity_semi: {convexity_scaled:.6f}")
-        
-        # 🟢 HIGH: Add PVBP (Price Value Basis Point) calculation
-        if mod_dur and price:
-            logger.info(f"🔧 Calculating PVBP for {isin or 'bond'}")
-            
-            # PVBP = Modified Duration * Price * 0.0001
-            # This gives the dollar change in price for a 1 basis point (0.01%) change in yield
-            pvbp = mod_dur * price * 0.0001
-            enhanced['pvbp'] = round(pvbp, 6)
-            logger.info(f"✅ PVBP: {pvbp:.6f}")
-        
-        # 🟡 MEDIUM: Add z_spread_semi placeholder
-        logger.info(f"🔧 Adding z_spread_semi placeholder for {isin or 'bond'}")
-        
-        # For now, use Treasury spread as approximation for Z-spread
-        # In full implementation, this would require treasury curve bootstrapping
-        tsy_spread = bond_result.get('spread')
-        if tsy_spread is not None:
-            # Z-spread is typically 5-15 bps wider than Treasury spread
-            z_spread_estimate = tsy_spread + 10.0  # Conservative 10bp addition
-            enhanced['z_spread_semi'] = round(z_spread_estimate, 6)
-            logger.info(f"✅ z_spread_semi (estimated): {z_spread_estimate:.6f} bps")
-        else:
-            enhanced['z_spread_semi'] = None
-            logger.info(f"⚠️ z_spread_semi: Not available (no Treasury spread)")
-        
-        # Add API field mappings for XTrillion compatibility
-        enhanced['ytm_semi'] = enhanced.get('yield')  # Map existing field
-        enhanced['mod_dur_semi'] = enhanced.get('duration')  # Map existing field
-        enhanced['tsy_spread_semi'] = enhanced.get('spread')  # Map existing field
-        
-        # Add metadata
-        enhanced['xtrillion_api_metrics_added'] = True
-        enhanced['api_metrics'] = [
-            'accrued_interest', 'convexity_semi', 'pvbp', 'z_spread_semi',
-            'ytm_semi', 'mod_dur_semi', 'tsy_spread_semi'
-        ]
-        
-        logger.info(f"🎯 XTrillion API metrics enhancement complete: 7 metrics added/fixed")
-        return enhanced
-        
-    except Exception as e:
-        logger.error(f"❌ XTrillion API enhancement failed: {e}")
-        return bond_result  # Return original on error
 
 def add_phase1_outputs(bond_result: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -218,7 +79,7 @@ def add_phase1_outputs(bond_result: Dict[str, Any]) -> Dict[str, Any]:
         # 🟢 1. Macaulay Duration (30 seconds to implement)
         if ytm and mod_dur:
             frequency = 2  # Semi-annual for most bonds
-            ytm_decimal = ytm if ytm < 1 else ytm / 100.0  # Handle both formats
+            ytm_decimal = ytm / 100.0  # Convert percentage to decimal
             mac_dur_semi = mod_dur * (1 + ytm_decimal/frequency)
             enhanced['mac_dur_semi'] = round(mac_dur_semi, 6)
             logger.debug(f"✅ Macaulay Duration: {mac_dur_semi:.6f} years")
@@ -226,17 +87,6 @@ def add_phase1_outputs(bond_result: Dict[str, Any]) -> Dict[str, Any]:
         # 🟢 2. Clean Price (10 seconds to implement)
         enhanced['clean_price'] = round(price, 6)
         logger.debug(f"✅ Clean Price: {price:.6f}")
-        
-        # 🟢 3. Dirty Price (10 seconds to implement) - FIXED
-        accrued = bond_result.get('accrued_interest')
-        if accrued is not None:
-            dirty_price = price + accrued
-            enhanced['dirty_price'] = round(dirty_price, 6)
-            logger.debug(f"✅ Dirty Price: {dirty_price:.6f}")
-        else:
-            # If no accrued interest available, assume dirty = clean for now
-            enhanced['dirty_price'] = round(price, 6)
-            logger.debug(f"✅ Dirty Price: {price:.6f} (no accrued data)")
         
         # 🟢 4. Annual Yield (2 minutes to implement) - FIXED
         if ytm:
@@ -251,10 +101,25 @@ def add_phase1_outputs(bond_result: Dict[str, Any]) -> Dict[str, Any]:
             enhanced['ytm_annual'] = round(annual_rate, 6)
             logger.debug(f"✅ Annual Yield: {annual_rate:.6f}%")
         
+        # 🟢 3. Dirty Price (10 seconds to implement) - FIXED
+        accrued = bond_result.get('accrued_interest')
+        if accrued is not None:
+            dirty_price = price + accrued
+            enhanced['dirty_price'] = round(dirty_price, 6)
+            logger.debug(f"✅ Dirty Price: {dirty_price:.6f}")
+        else:
+            # If no accrued interest available, assume dirty = clean for now
+            enhanced['dirty_price'] = round(price, 6)
+            logger.debug(f"✅ Dirty Price: {price:.6f} (no accrued data)")
+
+        
         # 🟢 5. Annual Modified Duration (CORRECTED - proper conversion)
         if mod_dur and ytm:
             # Handle ytm whether it's in decimal (0.048997) or percentage (4.8997) format
-            ytm_decimal = ytm if ytm < 1 else ytm / 100.0
+            if ytm < 1:  # Likely in decimal format already
+                ytm_decimal = ytm
+            else:  # In percentage format
+                ytm_decimal = ytm / 100.0
             
             # Proper conversion: Duration_annual = Duration_semi / (1 + yield_semi/2)
             mod_dur_annual = mod_dur / (1 + ytm_decimal/2)
@@ -264,7 +129,10 @@ def add_phase1_outputs(bond_result: Dict[str, Any]) -> Dict[str, Any]:
         # 🟢 6. Annual Macaulay Duration (CORRECTED - proper conversion)
         if enhanced.get('mac_dur_semi') and ytm:
             # Handle ytm whether it's in decimal (0.048997) or percentage (4.8997) format
-            ytm_decimal = ytm if ytm < 1 else ytm / 100.0
+            if ytm < 1:  # Likely in decimal format already
+                ytm_decimal = ytm
+            else:  # In percentage format
+                ytm_decimal = ytm / 100.0
                 
             # Proper conversion: MacDuration_annual = MacDuration_semi / (1 + yield_semi/2)
             mac_dur_annual = enhanced['mac_dur_semi'] / (1 + ytm_decimal/2)
@@ -283,12 +151,15 @@ def add_phase1_outputs(bond_result: Dict[str, Any]) -> Dict[str, Any]:
             'ytm_annual', 'mod_dur_annual', 'mac_dur_annual'
         ]
         
-        logger.info(f"🚀 Phase 1 enhancement complete: 6 new outputs added")
+        logger.info(f"🚀 Phase 1 enhancement complete: {len(enhanced['new_outputs'])} new outputs added")
         return enhanced
         
     except Exception as e:
+        # Fail gracefully - return original result if enhancement fails
         logger.error(f"❌ Phase 1 enhancement failed: {e}")
-        return bond_result  # Return original on error
+        bond_result['phase1_error'] = str(e)
+        return bond_result
+
 
 def calculate_bond_master(
     isin: Optional[str] = None,
@@ -300,13 +171,16 @@ def calculate_bond_master(
     bloomberg_db_path: str = './bloomberg_index.db'
 ) -> Dict[str, Any]:
     """
-    🎯 MASTER BOND CALCULATION FUNCTION
+    🎯 ENHANCED MASTER BOND CALCULATION FUNCTION
+    
+    ORIGINAL FUNCTIONALITY + 6 NEW PHASE 1 OUTPUTS
     
     Implements complete ISIN and parse hierarchy as you described:
     
     1. If ISIN present → ISIN hierarchy route
     2. If no ISIN → Parse hierarchy route  
     3. Both routes converge to same calculation engine
+    4. ✨ NEW: Phase 1 outputs automatically added
     
     Args:
         isin: Optional ISIN code (triggers ISIN hierarchy)
@@ -318,10 +192,16 @@ def calculate_bond_master(
         bloomberg_db_path: Bloomberg data database
         
     Returns:
-        Dict with yield, duration, spread, and metadata
+        Dict with yield, duration, spread, accrued_interest + 6 NEW OUTPUTS:
+        - mac_dur_semi: Macaulay Duration
+        - clean_price: Clean Price
+        - dirty_price: Dirty Price  
+        - ytm_annual: Annual Yield
+        - mod_dur_annual: Annual Modified Duration
+        - mac_dur_annual: Annual Macaulay Duration
     """
     
-    logger.info(f"🎯 Master calculation: ISIN={isin}, Description='{description}', Price={price}")
+    logger.info(f"🎯 Enhanced Master calculation: ISIN={isin}, Description='{description}', Price={price}")
     
     # ✅ FIXED: Handle settlement date logic - default to prior month end
     if settlement_date is None:
@@ -386,7 +266,7 @@ def calculate_bond_master(
                 'isin_provided': isin is not None
             }
         
-        # Extract and format results
+        # Extract and format results (ORIGINAL CODE)
         success_result = {
             'success': True,
             'isin': result.get('isin') or isin,
@@ -403,35 +283,12 @@ def calculate_bond_master(
             'settlement_date': result.get('settlement_date_str') or settlement_date
         }
         
-        logger.info(f"✅ Master calculation successful via {route_used}: Yield={result.get('yield'):.4f}%")
+        # 🚀 PHASE 1 ENHANCEMENT: Add 6 new outputs
+        success_result = add_phase1_outputs(success_result)
         
-        # 🚀 PHASE 1 ENHANCEMENT: Add 6 new outputs automatically
-        enhanced_result = add_phase1_outputs(success_result)
-        logger.info(f"🚀 Phase 1 outputs added: {enhanced_result.get('new_outputs', [])}")
-        
-        # 🎯 XTRILLION API ENHANCEMENT: Add missing critical API metrics
-        final_result = add_xtrillion_api_metrics(enhanced_result)
-        logger.info(f"🎯 XTrillion API metrics added: {final_result.get('api_metrics', [])}")
-        
-        # 🔧 CRITICAL: Apply unit consistency fixes
-        try:
-            logger.info("🔧 Applying unit consistency fixes...")
-            
-            # Convert all decimal yields to percentage format for consistency
-            yield_fields = ['yield', 'ytm_semi']
-            for field in yield_fields:
-                if field in final_result and isinstance(final_result[field], (int, float)):
-                    if final_result[field] < 1:  # Decimal format (0.048) - convert to percentage
-                        old_value = final_result[field]
-                        final_result[field] = final_result[field] * 100
-                        logger.info(f"✅ Fixed {field}: {old_value:.6f} → {final_result[field]:.6f}%")
-            
-            logger.info("✅ Unit consistency fixes applied successfully")
-            
-        except Exception as e:
-            logger.error(f"Error in unit consistency fixes: {e}")
-        
-        return final_result
+        logger.info(f"✅ Enhanced Master calculation successful via {route_used}: Yield={result.get('yield'):.4f}%")
+        logger.info(f"🚀 Phase 1 outputs added: {success_result.get('new_outputs', [])}")
+        return success_result
         
     except Exception as e:
         logger.error(f"🚨 Master calculation failed: {e}")
@@ -461,7 +318,7 @@ def process_bonds_with_weightings(df: pd.DataFrame, db_path: str, record_number:
         description = row.get('Name') or row.get('BOND_ENAME') or row.get('description')
         price = row.get('price', 100.0)
         
-        # Call the master function
+        # Call the enhanced master function
         result = calculate_bond_master(
             isin=isin,
             description=description,
@@ -478,7 +335,14 @@ def process_bonds_with_weightings(df: pd.DataFrame, db_path: str, record_number:
             'spread': result.get('spread'),
             'error': None if result.get('success') else result.get('error'),
             'route_used': result.get('route_used'),
-            'success': result.get('success')
+            'success': result.get('success'),
+            # Phase 1 outputs
+            'mac_dur_semi': result.get('mac_dur_semi'),
+            'clean_price': result.get('clean_price'),
+            'dirty_price': result.get('dirty_price'),
+            'ytm_annual': result.get('ytm_annual'),
+            'mod_dur_annual': result.get('mod_dur_annual'),
+            'mac_dur_annual': result.get('mac_dur_annual')
         }
         
         results.append(df_result)
@@ -486,12 +350,12 @@ def process_bonds_with_weightings(df: pd.DataFrame, db_path: str, record_number:
     return pd.DataFrame(results)
 
 
-# Test function to verify both routes work
-def test_master_function():
-    """Test both ISIN and parse hierarchy routes"""
+# Test function to verify both routes work with Phase 1 enhancements
+def test_enhanced_master_function():
+    """Test both ISIN and parse hierarchy routes with Phase 1 outputs"""
     
-    print("🧪 Testing Master Function - Both Routes")
-    print("=" * 50)
+    print("🧪 Testing Enhanced Master Function - Phase 1 Outputs")
+    print("=" * 60)
     
     # Test Route 1: ISIN Hierarchy  
     print("\n📍 Route 1: ISIN Hierarchy")
@@ -502,7 +366,20 @@ def test_master_function():
     )
     print(f"Route: {result1.get('route_used')}")
     print(f"Success: {result1.get('success')}")
-    print(f"Yield: {result1.get('yield'):.4f}%" if result1.get('yield') else "Yield: FAILED")
+    
+    if result1.get('success'):
+        print(f"📊 ORIGINAL OUTPUTS:")
+        print(f"   Yield: {result1.get('yield'):.4f}%")
+        print(f"   Duration: {result1.get('duration'):.4f} years")
+        print(f"   Spread: {result1.get('spread'):.1f} bps")
+        
+        print(f"🚀 NEW PHASE 1 OUTPUTS:")
+        print(f"   Macaulay Duration: {result1.get('mac_dur_semi'):.6f} years")
+        print(f"   Clean Price: {result1.get('clean_price'):.6f}")
+        print(f"   Dirty Price: {result1.get('dirty_price'):.6f}")
+        print(f"   Annual Yield: {result1.get('ytm_annual'):.6f}%")
+        print(f"   Annual Duration: {result1.get('mod_dur_annual'):.6f} years")
+        print(f"   Annual Mac Duration: {result1.get('mac_dur_annual'):.6f} years")
     
     # Test Route 2: Parse Hierarchy
     print("\n📖 Route 2: Parse Hierarchy")  
@@ -513,7 +390,19 @@ def test_master_function():
     )
     print(f"Route: {result2.get('route_used')}")
     print(f"Success: {result2.get('success')}")
-    print(f"Yield: {result2.get('yield'):.4f}%" if result2.get('yield') else "Yield: FAILED")
+    
+    if result2.get('success'):
+        print(f"📊 ORIGINAL OUTPUTS:")
+        print(f"   Yield: {result2.get('yield'):.4f}%")
+        print(f"   Duration: {result2.get('duration'):.4f} years")
+        print(f"   Spread: {result2.get('spread'):.1f} bps")
+        
+        print(f"🚀 NEW PHASE 1 OUTPUTS:")
+        print(f"   Macaulay Duration: {result2.get('mac_dur_semi'):.6f} years")
+        print(f"   Clean Price: {result2.get('clean_price'):.6f}")
+        print(f"   Dirty Price: {result2.get('dirty_price'):.6f}")
+        print(f"   Annual Yield: {result2.get('ytm_annual'):.6f}%")
+        print(f"   Annual Duration: {result2.get('mod_dur_annual'):.6f} years")
     
     # Compare results
     print(f"\n🔍 Route Comparison:")
@@ -525,13 +414,32 @@ def test_master_function():
         else:
             print("⚠️ Routes have different results")
     
+    # Test Phase 1 validation
+    print(f"\n🚀 Phase 1 Validation:")
+    if result1.get('phase1_outputs_added'):
+        print("✅ Phase 1 outputs successfully added")
+        new_outputs = result1.get('new_outputs', [])
+        print(f"✅ New outputs: {', '.join(new_outputs)}")
+        
+        # Validate mathematical relationships
+        mac_dur = result1.get('mac_dur_semi')
+        mod_dur = result1.get('duration')
+        if mac_dur and mod_dur and mac_dur > mod_dur:
+            print("✅ Macaulay > Modified Duration (mathematically correct)")
+        
+        dirty_price = result1.get('dirty_price')
+        clean_price = result1.get('clean_price')
+        if dirty_price and clean_price and dirty_price > clean_price:
+            print("✅ Dirty > Clean Price (positive accrued interest)")
+    
     return result1, result2
 
 
 if __name__ == "__main__":
-    print("🎯 Bond Master Calculator")
+    print("🎯 Enhanced Bond Master Calculator")
+    print("🚀 Original functionality + 6 new Phase 1 outputs")
     print("🔗 Implements complete ISIN and parse hierarchy")
     print()
     
-    # Test both routes
-    test_master_function()
+    # Test both routes with enhancements
+    test_enhanced_master_function()
