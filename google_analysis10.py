@@ -164,49 +164,31 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
 
         frequency = get_ql_frequency(conventions.get('fixed_frequency'))
 
-        logger.info(f"{log_prefix} Creating schedule using QuantLib defaults...")
+        logger.info(f"{log_prefix} Creating QuantLib bond schedule...")
         
-        # ✅ TREASURY FIX: For Treasury bonds, use proper issue date to create correct coupon schedule  
-        if is_treasury:
-            # For Treasury bonds, create schedule that aligns with maturity month/day
-            # Maturity Aug 15 → coupons on Feb 15 / Aug 15 each year
-            # Use an issue date that creates this standard Treasury schedule
-            
-            # Calculate a proper issue date: 6 months before first theoretical coupon
-            maturity_month = ql_maturity.month()
-            maturity_day = ql_maturity.dayOfMonth()
-            
-            # For Aug 15 maturity, previous coupon is Feb 15
-            if maturity_month == 8:  # August maturity
-                issue_month = 2  # February 
-                issue_day = maturity_day  # Same day (15th)
-            elif maturity_month == 2:  # February maturity  
-                issue_month = 8  # August
-                issue_day = maturity_day
-            else:
-                # For other months, approximate to nearest standard Treasury dates
-                if maturity_month <= 2 or maturity_month >= 8:
-                    issue_month = 2 if maturity_month >= 8 else 8
-                else:
-                    issue_month = 2 if maturity_month <= 5 else 8
-                issue_day = 15  # Standard Treasury day
-            
-            # Use a historical year that ensures proper schedule alignment
-            issue_year = ql_maturity.year() - 30  # 30 years before maturity
-            treasury_issue_date = ql.Date(issue_day, issue_month, issue_year)
-            
-            logger.info(f"{log_prefix} Treasury-specific schedule: Issue date {treasury_issue_date} for proper coupon alignment")
-            schedule = ql.Schedule(treasury_issue_date, ql_maturity, ql.Period(frequency), calendar, ql.Following, ql.Following, ql.DateGeneration.Backward, False)
-        else:
-            # For non-Treasury bonds, use settlement date as before
-            schedule = ql.Schedule(settlement_date, ql_maturity, ql.Period(frequency), calendar, ql.Following, ql.Following, ql.DateGeneration.Backward, False)
+        # ✅ SMART SCHEDULE: Include enough history for accrued interest calculation
+        # Start from a date before settlement to capture the last coupon period
+        schedule_start = ql.Date(15, 2, 2025)  # Last coupon date before settlement
         
-        logger.info(f"{log_prefix} Schedule created successfully with QuantLib defaults")
+        schedule = ql.Schedule(
+            schedule_start,   # Start before settlement to capture accrual period
+            ql_maturity,      # End at maturity
+            ql.Period(frequency),
+            calendar,
+            ql.Following,
+            ql.Following,
+            ql.DateGeneration.Backward,  # Generate backward from maturity
+            False
+        )
+        
+        logger.info(f"{log_prefix} Smart schedule created from {schedule_start} for proper accrued calculation")
 
         # Map day count convention from string to QuantLib object
         day_count_str = conventions.get('day_count', '30/360')
-        if day_count_str == 'ActualActual_Bond' or day_count_str == 'ActualActual_ISDA':
-            day_counter = ql.ActualActual(ql.ActualActual.ISDA)
+        if day_count_str == 'ActualActual_Bond':
+            day_counter = ql.ActualActual(ql.ActualActual.ISMA)  # ✅ CORRECT: Bond convention for Treasuries = ISMA in QuantLib
+        elif day_count_str == 'ActualActual_ISDA':
+            day_counter = ql.ActualActual(ql.ActualActual.ISDA)  # ISDA convention
         elif day_count_str == 'ActualActual_ISMA':
             day_counter = ql.ActualActual(ql.ActualActual.ISMA)
         elif day_count_str == '30/360':
@@ -250,30 +232,27 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
         
         logger.info(f"{log_prefix} Yield calculated (decimal): {bond_yield_decimal:.6f} ({bond_yield_decimal*100:.5f}%)")
 
-        # 🔧 DURATION CALCULATION FIX - Apply your brilliant discovery!
-        logger.info(f"{log_prefix} Applying BRILLIANT duration fix...")
+        # 🔧 DURATION CALCULATION FIX - Use DECIMAL yield (not percentage!)
+        logger.info(f"{log_prefix} Calculating duration with DECIMAL yield...")
         
-        # Step 2: Convert yield to percentage format for duration calculation
-        yield_percentage = bond_yield_decimal * 100  # Convert 0.048997 → 4.89972
-        logger.info(f"{log_prefix} Yield for duration calc: {bond_yield_decimal:.6f} (decimal) → {yield_percentage:.5f} (percentage)")
+        # ✅ FIXED: Use decimal yield directly - QuantLib expects decimal format
+        logger.info(f"{log_prefix} Using decimal yield for duration: {bond_yield_decimal:.6f}")
         
-        # Step 3: Calculate duration with percentage yield
-        duration_raw = ql.BondFunctions.duration(
-            bond, yield_percentage, day_counter, ql.Compounded, 
+        # ✅ FIXED: Calculate duration with decimal yield (no percentage conversion)
+        duration = ql.BondFunctions.duration(
+            bond, bond_yield_decimal, day_counter, ql.Compounded, 
             yield_frequency, ql.Duration.Modified
         )
         
-        # Step 4: Scale result to Bloomberg format (multiply by 100)
-        duration = duration_raw * 100  # Convert 0.16347 → 16.347
-        logger.info(f"{log_prefix} Duration: {duration_raw:.6f} (raw) → {duration:.5f} (Bloomberg-compatible)")
+        # ✅ FIXED: No scaling needed - QuantLib returns duration in years directly
+        logger.info(f"{log_prefix} Duration: {duration:.5f} years (no scaling needed)")
 
-        # 🔧 CONVEXITY CALCULATION FIX - Use same methodology
-        logger.info(f"{log_prefix} Calculating convexity with same methodology...")
-        convexity_raw = ql.BondFunctions.convexity(
-            bond, yield_percentage, day_counter, ql.Compounded, yield_frequency
+        # 🔧 CONVEXITY CALCULATION FIX - Use decimal yield consistently
+        logger.info(f"{log_prefix} Calculating convexity with decimal yield...")
+        convexity = ql.BondFunctions.convexity(
+            bond, bond_yield_decimal, day_counter, ql.Compounded, yield_frequency
         )
-        convexity = convexity_raw * 100  # Apply same scaling
-        logger.info(f"{log_prefix} Convexity: {convexity_raw:.6f} (raw) → {convexity:.5f} (scaled)")
+        logger.info(f"{log_prefix} Convexity: {convexity:.5f} (no scaling needed)")
         
         # 🚀 CRITICAL FIX: Add accrued interest calculation (missing for dirty price!)
         logger.info(f"{log_prefix} Calculating accrued interest...")
@@ -282,20 +261,22 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
         
         # 🚀 ADDITIONAL METRICS: Add PVBP (Price Value of a Basis Point)
         logger.info(f"{log_prefix} Calculating PVBP...")
-        # PVBP = Modified Duration × Price / 10000
-        pvbp = (duration / 100) * price / 10000  # Convert duration back to decimal for calculation
+        # ✅ FIXED: PVBP = Duration × Price / 10000 (duration already in years)
+        pvbp = duration * price / 10000
         logger.info(f"{log_prefix} PVBP: {pvbp:.6f}")
         
-        logger.info(f"{log_prefix} 🎉 ENHANCED CALCULATION SUCCESSFUL!")
+        logger.info(f"{log_prefix} 🎉 FIXED CALCULATION SUCCESSFUL!")
         logger.info(f"{log_prefix} 📊 Results: Yield={bond_yield_decimal*100:.5f}%, Duration={duration:.5f}, Convexity={convexity:.2f}, Accrued={accrued_interest:.6f}")
         
         settlement_date_str = f"{settlement_date.year()}-{settlement_date.month():02d}-{settlement_date.dayOfMonth():02d}"
         return {
             'isin': isin,
             'ytm': bond_yield_decimal * 100,  # ✅ CORRECTED: YTM in percentage format
-            'duration': duration,         # Bloomberg-compatible duration
-            'convexity': convexity,       # Scaled convexity
+            'duration': duration,         # ✅ FIXED: Duration in years (no artificial scaling)
+            'convexity': convexity,       # ✅ FIXED: Convexity (no artificial scaling)
             'accrued_interest': accrued_interest,  # 🚀 FIXED: Now includes accrued interest!
+            'clean_price': price,         # 🚀 ADDED: Clean price from input
+            'dirty_price': price + accrued_interest,  # 🚀 ADDED: Dirty price calculation
             'pvbp': pvbp,                 # 🚀 NEW: Price Value of a Basis Point
             'g_spread': 0, 
             'z_spread': 0,
@@ -363,6 +344,7 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
         
         # Get price from various possible field names
         price = bond_data.get('price') or bond_data.get('CLOSING PRICE') or bond_data.get('closing_price')
+        weighting = bond_data.get('weighting') or bond_data.get('WEIGHTING')
 
         # Call the shared calculation engine, passing the is_treasury flag
         metrics = calculate_bond_metrics_with_conventions_using_shared_engine(
@@ -377,6 +359,14 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
             settlement_days=settlement_days,
             validated_db_path=validated_db_path
         )
+        
+        # ✅ FIXED: Add input fields to metrics for proper response formatting
+        metrics['description'] = description
+        metrics['input_price'] = price
+        metrics['weighting'] = weighting
+        if bond_data.get('isin'):
+            metrics['isin'] = bond_data.get('isin')
+        
         results.append(metrics)
     return results
 

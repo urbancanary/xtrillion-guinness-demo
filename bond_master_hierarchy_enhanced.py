@@ -129,18 +129,13 @@ def add_phase1_outputs(bond_result: Dict[str, Any]) -> Dict[str, Any]:
             enhanced['mod_dur_annual'] = round(mod_dur_annual, 6)
             logger.debug(f"✅ Annual Modified Duration: {mod_dur_annual:.6f} years")
         
-        # 🟢 6. Annual Macaulay Duration (CORRECTED - proper conversion)
+        # 🟢 6. Annual Macaulay Duration (CORRECTED - Macaulay duration is invariant to compounding frequency)
         if enhanced.get('mac_dur_semi') and ytm:
-            # Handle ytm whether it's in decimal (0.048997) or percentage (4.8997) format
-            if ytm < 1:  # Likely in decimal format already
-                ytm_decimal = ytm
-            else:  # In percentage format
-                ytm_decimal = ytm / 100.0
-                
-            # Proper conversion: MacDuration_annual = MacDuration_semi / (1 + yield_semi/2)
-            mac_dur_annual = enhanced['mac_dur_semi'] / (1 + ytm_decimal/2)
+            # CORRECT: Macaulay duration is a weighted-average time measure and does not change 
+            # with compounding frequency. Unlike modified duration, it remains constant.
+            mac_dur_annual = enhanced['mac_dur_semi']  # No conversion needed!
             enhanced['mac_dur_annual'] = round(mac_dur_annual, 6)
-            logger.debug(f"✅ Annual Macaulay Duration: {mac_dur_annual:.6f} years")
+            logger.debug(f"✅ Annual Macaulay Duration: {mac_dur_annual:.6f} years (invariant to compounding)")
         
         # Add API field name mappings for XTrillion compatibility
         enhanced['ytm_semi'] = enhanced.get('yield')  # Map existing field
@@ -395,9 +390,11 @@ def test_enhanced_master_function():
     
     if result1.get('success'):
         print(f"📊 ORIGINAL OUTPUTS:")
-        print(f"   Yield: {result1.get('yield'):.4f}%")
+        print(f"   Yield: {result1.get('ytm'):.4f}%")
         print(f"   Duration: {result1.get('duration'):.4f} years")
-        print(f"   Spread: {result1.get('spread'):.1f} bps")
+        spread = result1.get('spread')
+        spread_str = f"{spread:.1f}" if spread is not None else "N/A"
+        print(f"   Spread: {spread_str} bps")
         
         print(f"🚀 NEW PHASE 1 OUTPUTS:")
         print(f"   Macaulay Duration: {result1.get('mac_dur_semi'):.6f} years")
@@ -419,9 +416,11 @@ def test_enhanced_master_function():
     
     if result2.get('success'):
         print(f"📊 ORIGINAL OUTPUTS:")
-        print(f"   Yield: {result2.get('yield'):.4f}%")
+        print(f"   Yield: {result2.get('ytm'):.4f}%")
         print(f"   Duration: {result2.get('duration'):.4f} years")
-        print(f"   Spread: {result2.get('spread'):.1f} bps")
+        spread = result2.get('spread')
+        spread_str = f"{spread:.1f}" if spread is not None else "N/A"
+        print(f"   Spread: {spread_str} bps")
         
         print(f"🚀 NEW PHASE 1 OUTPUTS:")
         print(f"   Macaulay Duration: {result2.get('mac_dur_semi'):.6f} years")
@@ -432,8 +431,8 @@ def test_enhanced_master_function():
     
     # Compare results
     print(f"\n🔍 Route Comparison:")
-    if result1.get('yield') and result2.get('yield'):
-        diff = abs(result1.get('yield') - result2.get('yield'))
+    if result1.get('ytm') and result2.get('ytm'):
+        diff = abs(result1.get('ytm') - result2.get('ytm'))
         print(f"Yield difference: {diff:.4f}% ({diff*100:.2f} bps)")
         if diff < 0.01:  # Less than 1bp difference
             print("✅ Routes converge correctly!")

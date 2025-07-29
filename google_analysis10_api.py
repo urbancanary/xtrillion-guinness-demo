@@ -43,6 +43,8 @@ sys.path.append('.')
 from bond_master_hierarchy_enhanced import calculate_bond_master
 # Import portfolio processing function
 from google_analysis10 import process_bond_portfolio
+# Import GCS database manager
+from gcs_database_manager import ensure_databases_available
 # Note: get_prior_month_end is defined below in this file
 
 def check_bond_maturity(result, settlement_date=None):
@@ -515,7 +517,10 @@ def optional_api_key(f):
 # YAS Framework - Response Format Functions (for technical responses)
 def format_bond_response(bond_data, response_format='YAS'):
     """
-    Format bond data according to YAS framework (technical responses)
+    FIXED: Enhanced field mapping for YAS format
+    
+    Handles both ISIN-based and description-based bond processing results
+    with comprehensive fallback logic and robust status detection.
     
     Args:
         bond_data: Dictionary containing bond analytics
@@ -525,28 +530,107 @@ def format_bond_response(bond_data, response_format='YAS'):
         Formatted bond response according to requested format
     """
     
-    # YAS (Yield Analysis Summary) - Essential trading fields
+    # ✅ ENHANCED: Comprehensive field mapping with multiple fallbacks
+    # Handle various field name variations from different processing paths
+    
+    # Yield mapping - handle multiple possible field names
+    yield_value = None
+    for field in ['yield', 'ytm', 'yield_to_maturity', 'calculated_yield']:
+        if bond_data.get(field) is not None:
+            yield_value = bond_data.get(field)
+            break
+    
+    # Duration mapping - multiple possible sources
+    duration_value = None
+    for field in ['duration', 'modified_duration', 'mod_duration']:
+        if bond_data.get(field) is not None:
+            duration_value = bond_data.get(field)
+            break
+    
+    # Spread mapping - multiple possible sources
+    spread_value = None
+    for field in ['spread', 'g_spread', 'government_spread', 'z_spread']:
+        val = bond_data.get(field)
+        if val is not None and val != 0:
+            spread_value = val
+            break
+    
+    # Accrued interest mapping
+    accrued_value = None
+    for field in ['accrued_interest', 'accrued', 'accrued_int']:
+        if bond_data.get(field) is not None:
+            accrued_value = bond_data.get(field)
+            break
+    
+    # Price mapping - multiple sources
+    price_value = None
+    for field in ['input_price', 'clean_price', 'price', 'market_price']:
+        if bond_data.get(field) is not None:
+            price_value = bond_data.get(field)
+            break
+    
+    # ISIN mapping
+    isin_value = bond_data.get('isin') or bond_data.get('bond_isin')
+    
+    # Name/Description mapping
+    name_value = (bond_data.get('name') or 
+                  bond_data.get('description') or 
+                  bond_data.get('bond_description') or 
+                  bond_data.get('security_name') or '')
+    
+    # ✅ ENHANCED: Robust status detection
+    # Check multiple indicators of successful calculation
+    is_successful = (
+        # No explicit error flag
+        bond_data.get('error') is None and
+        bond_data.get('calculation_error') is None and
+        
+        # Not explicitly marked as failed
+        bond_data.get('successful') is not False and
+        bond_data.get('failed') is not True and
+        
+        # Has at least one key calculated value
+        (yield_value is not None or duration_value is not None) and
+        
+        # Yield is reasonable (if present)
+        (yield_value is None or (0 <= yield_value <= 50)) and
+        
+        # Duration is reasonable (if present)  
+        (duration_value is None or (0 <= duration_value <= 100))
+    )
+    
+    # ✅ ENHANCED: YAS Response with better formatting
     yas_response = {
-        'isin': bond_data.get('isin', ''),
-        'name': bond_data.get('name', ''),
-        'yield': f"{bond_data.get('yield', 0):.2f}%" if bond_data.get('yield') is not None else None,
-        'duration': f"{bond_data.get('duration', 0):.1f} years" if bond_data.get('duration') is not None else None,
-        'spread': f"{bond_data.get('spread', 0):.0f} bps" if bond_data.get('spread') is not None else None,
-        'accrued_interest': f"{bond_data.get('accrued_interest', 0):.2f}%" if bond_data.get('accrued_interest') is not None else None,
-        'price': bond_data.get('price', 0),
+        'isin': isin_value,
+        'name': name_value,
+        'yield': f"{yield_value:.2f}%" if yield_value is not None else None,
+        'duration': f"{duration_value:.1f} years" if duration_value is not None else None,
+        'spread': f"{spread_value:.0f} bps" if spread_value is not None else None,
+        'accrued_interest': f"{accrued_value:.2f}%" if accrued_value is not None else None,
+        'price': float(price_value) if price_value is not None else 0,
         'country': bond_data.get('country', ''),
-        'status': 'success' if bond_data.get('error') is None else 'error'
+        'status': 'success' if is_successful else 'error'
     }
     
-    # Return YAS if that's what was requested
+    # Return YAS if that's what was requested (keeping existing logic for other formats)
     if response_format == 'YAS':
         return yas_response
     
-    # Add enhanced fields for other formats...
-    # (keeping existing logic for DES, FLDS, BXT, ADV)
+    # For other formats, add enhanced fields and return according to existing logic
+    # (This preserves all existing functionality for DES, FLDS, BXT, ADV formats)
+    enhanced_response = yas_response.copy()
     
-    return yas_response
-
+    if response_format in ['DES', 'FLDS', 'BXT', 'ADV']:
+        # Add additional fields for enhanced formats
+        enhanced_response.update({
+            'maturity': bond_data.get('maturity_date'),
+            'coupon': bond_data.get('coupon_rate'),
+            'frequency': bond_data.get('payment_frequency'),
+            'day_count': bond_data.get('day_count_convention'),
+            'currency': bond_data.get('currency', 'USD')
+        })
+    
+    return enhanced_response
 def format_portfolio_metrics(metrics, response_format='YAS'):
     """
     Format portfolio-level metrics according to response format (technical)
@@ -733,9 +817,9 @@ def health_check():
         ]
     })
 
-@app.route('/api/v1/bond/parse-and-calculate', methods=['POST'])
+@app.route('/api/v1/bond/analysis', methods=['POST'])
 @require_api_key_soft
-def parse_and_calculate_bond():
+def bond_analysis():
     """
     Enhanced bond calculation using Universal Parser + production calculation engine
     
@@ -940,12 +1024,15 @@ def parse_and_calculate_bond():
         # Extract context parameter for response formatting
         context = data.get('context')  # Can be "portfolio", "technical", or None
         
-        # Apply context-aware formatting
-        formatted_response = format_response_by_context(response, context)
+        # TODO: Context-aware formatting will be implemented in future version
+        # For now, return the standard response format
+        if context:
+            response['context_requested'] = context
+            response['context_note'] = "Context-aware formatting coming in future version"
         
         logger.info(f"✅ Successfully calculated using XTrillion Core: {bond_input} (route: {result.get('route_used')}, context: {context or 'default'})")
         logger.info(f"📊 XTrillion Core Result: YTM={result.get('ytm'):.4f}%, Duration={result.get('duration'):.2f}, Route={result.get('route_used')}")
-        return jsonify(formatted_response)
+        return jsonify(response)
         
     except Exception as e:
         error_msg = f"Bond calculation error: {str(e)}"
@@ -956,9 +1043,9 @@ def parse_and_calculate_bond():
             'universal_parser_available': UNIVERSAL_PARSER_AVAILABLE
         }), 500
 
-@app.route('/api/v1/portfolio/analyze', methods=['POST'])
+@app.route('/api/v1/portfolio/analysis', methods=['POST'])
 @require_api_key_soft
-def analyze_portfolio():
+def portfolio_analysis():
     """Portfolio-level bond analysis with Treasury enhancement - RE-ENABLED
     
     Production bond portfolio analysis with Universal Parser integration
@@ -1040,18 +1127,19 @@ def analyze_portfolio():
         results_list = results
 
         # Calculate portfolio-level metrics
-        successful_bonds = [b for b in results_list if 'error' not in b and b.get('yield') is not None and b.get('weightings') is not None]
+        # ✅ FIXED: Use correct field names from calculation engine
+        successful_bonds = [b for b in results_list if 'error' not in b and b.get('ytm') is not None and b.get('weighting') is not None]
         total_bonds = len(results_list)
         success_count = len(successful_bonds)
 
         portfolio_metrics = {}
         if success_count > 0:
-            total_weight = sum(b['weightings'] for b in successful_bonds)
+            total_weight = sum(b['weighting'] for b in successful_bonds)
             if total_weight > 0:
                 portfolio_metrics = {
-                    'portfolio_yield': float(sum(b['yield'] * b['weightings'] for b in successful_bonds) / total_weight),
-                    'portfolio_duration': float(sum(b['duration'] * b['weightings'] for b in successful_bonds) / total_weight),
-                    'portfolio_spread': float(sum(b['spread'] * b['weightings'] for b in successful_bonds) / total_weight),
+                    'portfolio_yield': float(sum(b['ytm'] * b['weighting'] for b in successful_bonds) / total_weight),
+                    'portfolio_duration': float(sum(b['duration'] * b['weighting'] for b in successful_bonds) / total_weight),
+                    'portfolio_spread': float(sum((b.get('g_spread', 0) or 0) * b['weighting'] for b in successful_bonds) / total_weight),
                     'total_bonds': total_bonds,
                     'successful_bonds': success_count,
                     'failed_bonds': total_bonds - success_count,
@@ -1097,6 +1185,34 @@ def analyze_portfolio():
             'status': 'error',
             'error': error_msg
         }), 500
+
+# =============================================================================
+# BACKWARD COMPATIBILITY ALIASES (DEPRECATED)
+# =============================================================================
+
+@app.route('/api/v1/bond/parse-and-calculate', methods=['POST'])
+@require_api_key_soft
+def parse_and_calculate_bond_deprecated():
+    """
+    DEPRECATED: Use /api/v1/bond/analysis instead
+    
+    This endpoint is maintained for backward compatibility but is deprecated.
+    Please update your code to use the new /api/v1/bond/analysis endpoint.
+    """
+    logger.warning("⚠️ DEPRECATED ENDPOINT USED: /api/v1/bond/parse-and-calculate - Please use /api/v1/bond/analysis")
+    return bond_analysis()
+
+@app.route('/api/v1/portfolio/analyze', methods=['POST'])
+@require_api_key_soft  
+def analyze_portfolio_deprecated():
+    """
+    DEPRECATED: Use /api/v1/portfolio/analysis instead
+    
+    This endpoint is maintained for backward compatibility but is deprecated.
+    Please update your code to use the new /api/v1/portfolio/analysis endpoint.
+    """
+    logger.warning("⚠️ DEPRECATED ENDPOINT USED: /api/v1/portfolio/analyze - Please use /api/v1/portfolio/analysis")
+    return portfolio_analysis()
 
 # Keep all other existing endpoints unchanged...
 @app.route('/api/v1/database/info', methods=['GET'])
@@ -1260,7 +1376,7 @@ def api_guide():
             </div>
             
             <div class="endpoint">
-                <h3><span class="method">POST</span> /api/v1/bond/parse-and-calculate</h3>
+                <h3><span class="method">POST</span> /api/v1/bond/analysis</h3>
                 <p><strong>Enhanced bond calculation</strong> - Universal Parser automatically detects ISIN vs description</p>
                 <pre>
 {
@@ -1287,7 +1403,7 @@ OR
             </div>
             
             <div class="endpoint">
-                <h3><span class="method">POST</span> /api/v1/portfolio/analyze</h3>
+                <h3><span class="method">POST</span> /api/v1/portfolio/analysis</h3>
                 <p><strong>Portfolio analysis</strong> with Universal Parser for all bonds</p>
                 <pre>
 {
@@ -1321,6 +1437,7 @@ OR
                     <li><strong>Rich Responses:</strong> Self-documenting format with complete metadata</li>
                     <li><strong>Bloomberg-style Formatting:</strong> YAS format with field descriptions</li>
                     <li><strong>Authentication:</strong> 8 different API keys for various environments</li>
+                    <li><strong>NEW:</strong> Improved endpoint naming - /analysis instead of /analyze (no spelling confusion)</li>
                 </ul>
             </div>
             
@@ -1328,6 +1445,16 @@ OR
                 <h3>📊 Response Format</h3>
                 <p><strong>Rich Self-Documenting:</strong> All responses include field descriptions, metadata, and calculation details</p>
                 <p><strong>Bloomberg Terminal Style:</strong> YAS format for professional bond analytics</p>
+            </div>
+            
+            <div class="endpoint">
+                <h3>⚠️ Deprecated Endpoints (Backward Compatibility)</h3>
+                <p><strong>Old endpoints still work but are deprecated:</strong></p>
+                <ul>
+                    <li><code>/api/v1/bond/parse-and-calculate</code> → Use <code>/api/v1/bond/analysis</code></li>
+                    <li><code>/api/v1/portfolio/analyze</code> → Use <code>/api/v1/portfolio/analysis</code></li>
+                </ul>
+                <p><span class="warning">⚠️ Note:</span> Old endpoints will be removed in a future version. Please update your integrations.</p>
             </div>
         </div>
     </body>
@@ -1345,6 +1472,14 @@ if __name__ == '__main__':
     logger.info(f"🎯 Universal Parser: {'Available' if UNIVERSAL_PARSER_AVAILABLE else 'Fallback Mode'}")
     logger.info(f"📊 Response Format: Rich self-documenting with complete metadata")
     logger.info(f"📈 Ready for partnership demonstrations with enhanced parsing reliability")
+    
+    # 🔧 CRITICAL: Fetch databases from GCS before starting API
+    logger.info("🔍 Ensuring bond databases are available from GCS...")
+    if ensure_databases_available():
+        logger.info("✅ All required databases successfully fetched from GCS")
+    else:
+        logger.error("❌ Failed to fetch databases from GCS - API may not function properly")
+        logger.error("💡 Check GCS bucket access and database availability")
     
     if UNIVERSAL_PARSER_AVAILABLE:
         logger.info(f"✅ Parsing redundancy eliminated - single path for ALL bond inputs")

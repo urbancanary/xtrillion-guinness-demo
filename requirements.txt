@@ -1,4 +1,4 @@
-# Google Analysis 9 - Production Requirements
+# Google Analysis 10 - Production Requirements
 # Compatible versions that work together without numpy conflicts
 
 numpy==1.24.3
@@ -8,3 +8,6 @@ python-dateutil==2.8.2
 requests==2.31.0
 flask==2.3.2
 gunicorn==21.2.0
+
+# Google Cloud Storage for database fetching
+google-cloud-storage==2.10.0
