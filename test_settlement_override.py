@@ -46,7 +46,7 @@ result_t1 = calculate_bond_metrics_with_conventions_using_shared_engine(
     trade_date=ql_trade_date,
     treasury_handle=treasury_handle,
     ticker_conventions=ticker_conventions_t1,
-    validated_db_path="./data/validated_quantlib_bonds.db"
+    validated_db_path="./validated_quantlib_bonds.db"
 )
 
 print(f"T+1 Results:")
@@ -75,7 +75,7 @@ result_t0 = calculate_bond_metrics_with_conventions_using_shared_engine(
     trade_date=ql_trade_date,
     treasury_handle=treasury_handle,
     ticker_conventions=ticker_conventions_t0,
-    validated_db_path="./data/validated_quantlib_bonds.db"
+    validated_db_path="./validated_quantlib_bonds.db"
 )
 
 print(f"T+0 Results (Direct Settlement):")

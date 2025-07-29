@@ -136,7 +136,6 @@ docs/_build/
 # Specific large or sensitive files to exclude
 bbg baseline.xlsx
 *.docx
-!*API*Specification*.docx
 
 # Keep important project files
 !google_analysis10.py
@@ -148,6 +147,8 @@ bbg baseline.xlsx
 !xtrillion_cash_flow_calculator.py
 !bond_master_hierarchy.py
 !README.md
+!API_SPECIFICATION.md
+!DEPLOYMENT_ARCHITECTURE.md
 !Dockerfile
 !requirements.txt
 !deploy*.sh

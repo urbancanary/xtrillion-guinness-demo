@@ -19,7 +19,7 @@ def test_treasury_parsing():
     print(f"Testing description: {description}")
     
     try:
-        parser = SmartBondParser('./bonds_data.db', './data/validated_quantlib_bonds.db')
+        parser = SmartBondParser('./bonds_data.db', './validated_quantlib_bonds.db')
         result = parser.parse_bond_description(description)
         
         print("✅ Parsing successful!")

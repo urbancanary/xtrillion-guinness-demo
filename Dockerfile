@@ -58,16 +58,34 @@ RUN echo '#!/bin/bash' > /app/startup.sh && \
     echo 'echo "🌐 Environment: $ENVIRONMENT"' >> /app/startup.sh && \
     echo 'echo "💾 Database Source: $DATABASE_SOURCE"' >> /app/startup.sh && \
     echo 'echo ""' >> /app/startup.sh && \
+    echo '# Check database source and handle accordingly' >> /app/startup.sh && \
+    echo 'if [ "$DATABASE_SOURCE" = "local_copy" ]; then' >> /app/startup.sh && \
+    echo '    echo "⏳ Waiting for local databases to be copied..."' >> /app/startup.sh && \
+    echo '    for i in {1..60}; do' >> /app/startup.sh && \
+    echo '        if [ -f "bonds_data.db" ] && [ -f "validated_quantlib_bonds.db" ] && [ -f "bloomberg_index.db" ]; then' >> /app/startup.sh && \
+    echo '            echo "✅ All databases found after ${i} seconds"' >> /app/startup.sh && \
+    echo '            export DATABASE_PATH="/app/bonds_data.db"' >> /app/startup.sh && \
+    echo '            export VALIDATED_DB_PATH="/app/validated_quantlib_bonds.db"' >> /app/startup.sh && \
+    echo '            export BLOOMBERG_DB_PATH="/app/bloomberg_index.db"' >> /app/startup.sh && \
+    echo '            break' >> /app/startup.sh && \
+    echo '        fi' >> /app/startup.sh && \
+    echo '        echo "   Waiting... ($i/60)"' >> /app/startup.sh && \
+    echo '        sleep 1' >> /app/startup.sh && \
+    echo '    done' >> /app/startup.sh && \
+    echo '    if [ ! -f "bonds_data.db" ]; then' >> /app/startup.sh && \
+    echo '        echo "❌ Timeout waiting for databases to be copied"' >> /app/startup.sh && \
+    echo '        exit 1' >> /app/startup.sh && \
+    echo '    fi' >> /app/startup.sh && \
     echo '# Check if databases exist locally (embedded deployment)' >> /app/startup.sh && \
-    echo 'if [ -f "bonds_data.db" ] && [ -f "validated_quantlib_bonds.db" ]; then' >> /app/startup.sh && \
+    echo 'elif [ -f "bonds_data.db" ] && [ -f "validated_quantlib_bonds.db" ]; then' >> /app/startup.sh && \
     echo '    echo "✅ Using embedded databases"' >> /app/startup.sh && \
     echo '    export DATABASE_PATH="/app/bonds_data.db"' >> /app/startup.sh && \
     echo '    export VALIDATED_DB_PATH="/app/validated_quantlib_bonds.db"' >> /app/startup.sh && \
     echo 'elif [ -f "download_databases_from_gcs.sh" ]; then' >> /app/startup.sh && \
     echo '    echo "🔽 Downloading databases from GCS..."' >> /app/startup.sh && \
     echo '    ./download_databases_from_gcs.sh' >> /app/startup.sh && \
-    echo '    export DATABASE_PATH="/app/data/bonds_data.db"' >> /app/startup.sh && \
-    echo '    export VALIDATED_DB_PATH="/app/data/validated_quantlib_bonds.db"' >> /app/startup.sh && \
+    echo '    export DATABASE_PATH="/app/bonds_data.db"' >> /app/startup.sh && \
+    echo '    export VALIDATED_DB_PATH="/app/validated_quantlib_bonds.db"' >> /app/startup.sh && \
     echo 'else' >> /app/startup.sh && \
     echo '    echo "❌ No databases found and no download script available"' >> /app/startup.sh && \
     echo '    exit 1' >> /app/startup.sh && \

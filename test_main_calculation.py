@@ -64,7 +64,7 @@ try:
         trade_date=ql.Date(30, 6, 2025),  # June 30 as trade date AND settlement date
         treasury_handle=treasury_handle,
         ticker_conventions=ticker_conventions,
-        validated_db_path="./data/validated_quantlib_bonds.db"
+        validated_db_path="./validated_quantlib_bonds.db"
     )
     
     print("📊 MAIN ENGINE RESULTS:")

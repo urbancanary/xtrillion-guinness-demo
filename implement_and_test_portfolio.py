@@ -950,7 +950,7 @@ def test_portfolio_with_text_only():
             from core.bond_description_parser import SmartBondParser
             
             # Create parser (with dummy paths for testing)
-            parser = SmartBondParser("./data/bonds_data.db", "./data/validated_quantlib_bonds.db")
+            parser = SmartBondParser("./bonds_data.db", "./validated_quantlib_bonds.db")
             
             # Parse the description
             parsed_data = parser.parse_bond_description(description)

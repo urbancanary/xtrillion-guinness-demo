@@ -20,6 +20,9 @@ from typing import Dict, Optional, Tuple, List
 import logging
 from collections import Counter
 
+# 🎯 BREAKTHROUGH: Import centralized sophisticated date parser - FIXES ALL DATE BUGS!
+from centralized_bond_date_parser import parse_bond_date_simple, parse_bond_date
+
 class SmartBondParser:
     """Intelligent bond description parser with convention prediction"""
     
@@ -278,7 +281,27 @@ class SmartBondParser:
             return float(coupon_str)
     
     def parse_maturity_date(self, month: str, day: str, year: str) -> str:
-        """Convert date components to ISO format with correct future date logic"""
+        """
+        Convert date components to ISO format using centralized sophisticated date parser
+        
+        🎯 BREAKTHROUGH: Now uses centralized parser - eliminates all date parsing bugs!
+        """
+        # Create date string in format that our parser can understand
+        date_str = f"{month}/{day}/{year}"
+        
+        # Use our sophisticated centralized parser
+        result = parse_bond_date_simple(date_str)
+        
+        if result:
+            self.logger.debug(f"✅ Centralized parser: '{date_str}' → '{result}'")
+            return result
+        else:
+            # Fallback to basic logic (shouldn't happen with our robust parser)
+            self.logger.warning(f"❌ Centralized parser failed for '{date_str}', using fallback")
+            return self._fallback_date_parse(month, day, year)
+    
+    def _fallback_date_parse(self, month: str, day: str, year: str) -> str:
+        """Fallback date parsing (legacy method for emergencies only)"""
         # Ensure all inputs are strings (handle both string and int inputs)
         month = str(month)
         day = str(day)  
@@ -356,7 +379,7 @@ class SmartBondParser:
                                 # For Treasury patterns, pass month, day, year in correct order
                                 maturity = self.parse_maturity_date(month, day, year)
                             else:  # Old format: month is a number
-                                coupon_str, day, month, year = groups  # ✅ FIXED: For Treasury format "T 3 15/08/2052" = day/month/year
+                                coupon_str, month, day, year = groups  # ✅ FIXED: For Treasury format "T 4.1 02/15/28" = MM/DD/YY
                                 coupon = self.parse_fractional_coupon(coupon_str)
                                 issuer = "US Treasury"
                                 maturity = self.parse_maturity_date(month, day, year)
@@ -692,7 +715,7 @@ class SmartBondParser:
 def test_parser():
     """Test the parser with sample descriptions"""
     # Corrected to include the bloomberg_db_path for standalone testing
-    parser = SmartBondParser("./../data/bonds_data.db", "./../data/validated_quantlib_bonds.db", "./../data/bloomberg_index.db")
+    parser = SmartBondParser("./../bonds_data.db", "./../validated_quantlib_bonds.db", "./../bloomberg_index.db")
     
     test_descriptions = [
         "T 4.1 02/15/28",

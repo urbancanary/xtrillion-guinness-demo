@@ -45,7 +45,198 @@ from bond_master_hierarchy_enhanced import calculate_bond_master
 from google_analysis10 import process_bond_portfolio
 # Note: get_prior_month_end is defined below in this file
 
-def format_response_by_context(response_data, context=None):
+def check_bond_maturity(result, settlement_date=None):
+    """
+    Check if bond has matured relative to settlement date
+    
+    Args:
+        result: Bond calculation result containing maturity info
+        settlement_date: Settlement date string or None for default
+        
+    Returns:
+        dict: Contains 'is_matured', 'maturity_date', 'settlement_date', 'message'
+    """
+    from datetime import datetime, date
+    
+    # Get settlement date (use provided or default to current/prior month end)
+    if settlement_date:
+        try:
+            settlement = datetime.strptime(settlement_date, '%Y-%m-%d').date()
+        except:
+            settlement = datetime.now().date()
+    else:
+        settlement = datetime.now().date()
+    
+    # Try to extract maturity date from result
+    maturity_date = None
+    
+    # Check various possible maturity date fields
+    maturity_sources = [
+        result.get('maturity_date'),
+        result.get('maturity'),
+        result.get('bond_maturity'),
+        result.get('final_maturity')
+    ]
+    
+    for maturity_source in maturity_sources:
+        if maturity_source:
+            try:
+                if isinstance(maturity_source, str):
+                    # Try different date formats
+                    for fmt in ['%Y-%m-%d', '%m/%d/%Y', '%d/%m/%Y', '%Y-%m-%d %H:%M:%S']:
+                        try:
+                            maturity_date = datetime.strptime(maturity_source, fmt).date()
+                            break
+                        except:
+                            continue
+                elif isinstance(maturity_source, date):
+                    maturity_date = maturity_source
+                elif hasattr(maturity_source, 'date'):
+                    maturity_date = maturity_source.date()
+                
+                if maturity_date:
+                    break
+            except:
+                continue
+    
+    # If no maturity date found, try to parse from description
+    if not maturity_date and result.get('description'):
+        desc = result.get('description', '')
+        # Try to extract date patterns like "02/15/25", "15/08/52", etc.
+        import re
+        
+        # Pattern for MM/DD/YY or DD/MM/YY
+        date_patterns = [
+            r'(\d{1,2})/(\d{1,2})/(\d{2,4})',  # MM/DD/YY or MM/DD/YYYY
+            r'(\d{1,2})-(\d{1,2})-(\d{2,4})',  # MM-DD-YY or MM-DD-YYYY
+        ]
+        
+        for pattern in date_patterns:
+            matches = re.findall(pattern, desc)
+            if matches:
+                try:
+                    month, day, year = matches[-1]  # Take the last date found
+                    
+                    # Convert 2-digit year to 4-digit
+                    year = int(year)
+                    if year < 50:
+                        year += 2000
+                    elif year < 100:
+                        year += 1900
+                    
+                    maturity_date = date(year, int(month), int(day))
+                    break
+                except:
+                    continue
+    
+    # Check if bond has matured
+    if maturity_date:
+        is_matured = maturity_date <= settlement
+        days_past_maturity = (settlement - maturity_date).days if is_matured else 0
+        
+        return {
+            'is_matured': is_matured,
+            'maturity_date': maturity_date.strftime('%Y-%m-%d'),
+            'settlement_date': settlement.strftime('%Y-%m-%d'),
+            'days_past_maturity': days_past_maturity,
+            'message': f"Bond matured on {maturity_date.strftime('%Y-%m-%d')}, {days_past_maturity} days before settlement date" if is_matured else None
+        }
+    else:
+        # Could not determine maturity date
+        return {
+            'is_matured': False,
+            'maturity_date': None,
+            'settlement_date': settlement.strftime('%Y-%m-%d'),
+            'days_past_maturity': 0,
+            'message': "Could not determine bond maturity date"
+        }
+
+def create_matured_bond_response(bond_input, maturity_info, context=None):
+    """
+    Create appropriate response for a matured bond
+    
+    Args:
+        bond_input: Original bond description
+        maturity_info: Maturity check result
+        context: Optional context parameter
+        
+    Returns:
+        dict: Response structure for matured bond
+    """
+    
+    # Base matured bond response
+    base_response = {
+        'status': 'matured',
+        'bond': {
+            'description': bond_input,
+            'maturity_date': maturity_info['maturity_date'],
+            'settlement_date': maturity_info['settlement_date'],
+            'status': 'matured',
+            'days_past_maturity': maturity_info['days_past_maturity']
+        },
+        'analytics': {
+            'ytm': None,
+            'duration': None,
+            'accrued_interest': 0.0,
+            'clean_price': None,
+            'dirty_price': None,
+            'pvbp': None,
+            'macaulay_duration': None,
+            'convexity': None,
+            'settlement_date': maturity_info['settlement_date'],
+            'spread': None,
+            'z_spread': None
+        },
+        'maturity_info': {
+            'is_matured': True,
+            'maturity_date': maturity_info['maturity_date'], 
+            'settlement_date': maturity_info['settlement_date'],
+            'message': maturity_info['message'],
+            'note': "All analytics are null/zero as bond has reached maturity"
+        },
+        'metadata': {
+            'api_version': 'v1.2',
+            'calculation_engine': 'maturity_detection',
+            'bond_status': 'matured',
+            'context_applied': context or 'default'
+        }
+    }
+    
+    # Apply context-specific formatting for matured bonds
+    if context == "portfolio":
+        base_response['analytics'] = {
+            'yield_semi': None,
+            'yield_annual': None,
+            'duration_semi': None,
+            'duration_annual': None,
+            'macaulay_duration_semi': None,
+            'macaulay_duration_annual': None,
+            'convexity': None,
+            'accrued_interest': 0.0,
+            'pvbp': None,
+            'clean_price': None,
+            'dirty_price': None,
+            'settlement_date': maturity_info['settlement_date']
+        }
+        base_response['context'] = 'portfolio'
+        base_response['optimization'] = 'Matured bond - no analytics available for portfolio aggregation'
+        
+    elif context == "technical":
+        base_response['context'] = 'technical'
+        base_response['debug_info'] = {
+            'maturity_detection': 'bond_expired',
+            'parsing_route': 'maturity_check',
+            'universal_parser_used': True,
+            'field_count': 0,
+            'conventions_applied': 'N/A - bond matured',
+            'metadata_level': 'enhanced'
+        }
+        base_response['metadata']['debug_mode'] = True
+        
+    else:
+        base_response['context'] = 'default'
+    
+    return base_response
     """
     Context-aware response formatting for different use cases
     
@@ -658,6 +849,15 @@ def parse_and_calculate_bond():
                 'description': bond_input,
                 'universal_parser_available': UNIVERSAL_PARSER_AVAILABLE
             }), 400
+        
+        # 🚨 CRITICAL CHECK: Detect if bond has matured
+        maturity_info = check_bond_maturity(result, data.get('settlement_date'))
+        
+        if maturity_info['is_matured']:
+            # Return matured bond response
+            logger.warning(f"🚨 MATURED BOND DETECTED: {bond_input} - {maturity_info['message']}")
+            matured_response = create_matured_bond_response(bond_input, maturity_info, data.get('context'))
+            return jsonify(matured_response)
         
         # CONSISTENT FIELD NAMES: Same data, different detail levels
         # Base analytics with FULL PRECISION + CONSISTENT YTM NAMING

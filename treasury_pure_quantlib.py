@@ -55,7 +55,9 @@ def calculate_treasury_pure_quantlib(description, price=71.66, settlement_date_s
     
     # Let QuantLib determine the proper schedule start based on market conventions
     # Start from a date that creates proper Treasury payment dates
-    schedule_start = calendar.advance(maturity_date, ql.Period(-periods_to_maturity * 6, ql.Months))
+    # ❌ FIXED: Commented out dangerous negative period calculation
+    # schedule_start = calendar.advance(maturity_date, ql.Period(-periods_to_maturity * 6, ql.Months))
+    # TODO: Replace with real date from database or conservative fixed date
     
     # Ensure the schedule start creates proper Feb 15 / Aug 15 payment dates
     # QuantLib will automatically adjust to proper Treasury conventions

@@ -392,7 +392,7 @@ def calculate_bond_master(
             'isin': result.get('isin') or isin,
             'description': description,
             'price': price,
-            'yield': result.get('yield'),
+            'ytm': result.get('ytm'),  # ✅ FIXED: Map from 'ytm' to 'ytm'
             'duration': result.get('duration'), 
             'spread': result.get('spread'),
             'accrued_interest': result.get('accrued_interest'),
@@ -403,7 +403,8 @@ def calculate_bond_master(
             'settlement_date': result.get('settlement_date_str') or settlement_date
         }
         
-        logger.info(f"✅ Master calculation successful via {route_used}: Yield={result.get('yield'):.4f}%")
+        ytm_value = result.get('ytm', 0)
+        logger.info(f"✅ Master calculation successful via {route_used}: YTM={ytm_value:.4f}%")
         
         # 🚀 PHASE 1 ENHANCEMENT: Add 6 new outputs automatically
         enhanced_result = add_phase1_outputs(success_result)
@@ -418,7 +419,7 @@ def calculate_bond_master(
             logger.info("🔧 Applying unit consistency fixes...")
             
             # Convert all decimal yields to percentage format for consistency
-            yield_fields = ['yield', 'ytm_semi']
+            yield_fields = ['ytm', 'ytm_semi']  # ✅ FIXED: Use 'ytm' not 'yield'
             for field in yield_fields:
                 if field in final_result and isinstance(final_result[field], (int, float)):
                     if final_result[field] < 1:  # Decimal format (0.048) - convert to percentage

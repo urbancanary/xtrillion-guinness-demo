@@ -4,7 +4,7 @@ Treasury Bond Detection & Database Enhancement - Dual Database Edition
 ====================================================================
 
 Automatically detect US Treasury bonds from bond names and enhance processing
-with the dual database system. Works with both ../data/bonds_data.db and ../data/bloomberg_index.db.
+with the dual database system. Works with both ../bonds_data.db and ../bloomberg_index.db.
 """
 
 import re
@@ -88,7 +88,7 @@ class DualDatabaseTreasuryDetector:
     
     def check_bond_exists_in_databases(self, isin: str) -> Tuple[bool, str]:
         """Check if bond exists in either database"""
-        # Check primary database (../data/bonds_data.db/static)
+        # Check primary database (../bonds_data.db/static)
         try:
             conn = sqlite3.connect(self.primary_db_path)
             cursor = conn.cursor()

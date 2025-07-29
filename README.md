@@ -1,30 +1,70 @@
-# 🏦 Google Analysis 10 - Enhanced Bond Portfolio Analytics
+# 🏦 Google Analysis 10 - XTrillion Core Bond Analytics API
 
-Advanced bond analytics system with QuantLib integration, Bloomberg-level accuracy, and institutional-grade portfolio risk metrics.
+Professional-grade bond calculation engine with institutional analytics and 13 enhanced metrics.
 
-## 🎯 **25-Bond Portfolio Testing Ready!**
-**Enhanced API with Convexity, Option-Adjusted Duration (OAD), and Real Market Price Integration**
+## 📚 **API Documentation**
 
-## 🚀 **Quick Start - Portfolio API Testing**
+### **📖 [Complete API Specification](API_SPECIFICATION.md)**
 
-### Start the Enhanced Portfolio API
+The complete API documentation including:
+- ✅ **13 Enhanced Metrics** - Yield, duration, convexity, PVBP, and more
+- ✅ **Consistent Field Names** - Same fields across all response formats  
+- ✅ **Universal Parser** - ISIN codes and bond descriptions
+- ✅ **Live Examples** - Python, JavaScript, and curl integration
+- ✅ **Error Handling** - Complete error response documentation
+
+## 🚀 **Live Production API**
+
+**Base URL:** `https://future-footing-414610.uc.r.appspot.com`
+
+### Quick Test
 ```bash
-cd /Users/andyseaman/Notebooks/json_receiver_project/google_analysis10
-./start_ga10_portfolio_api.sh
+curl -X POST "https://future-footing-414610.uc.r.appspot.com/api/v1/bond/parse-and-calculate" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: gax10_demo_3j5h8m9k2p6r4t7w1q" \
+  -d '{"description": "T 3 15/08/52", "price": 71.66}'
 ```
 
-**API Endpoints:**
-- 📡 **Base URL:** http://localhost:8080
-- 🔍 **Health Check:** http://localhost:8080/health  
-- 📊 **Portfolio Analytics:** http://localhost:8080/api/v1/portfolio/analyze
-- 🏦 **Individual Bond:** http://localhost:8080/api/v1/bond/parse-and-calculate
+### Response Example
+```json
+{
+  "analytics": {
+    "yield": 4.899718,
+    "duration": 16.346808,
+    "convexity": 229.640643,
+    "pvbp": 0.117141,
+    "annual_yield": 4.959736,
+    "macaulay_duration": 16.747282,
+    "clean_price": 71.66,
+    "dirty_price": 71.66,
+    "accrued_interest": 0.369863
+  },
+  "status": "success"
+}
+```
 
-### Features Ready for Testing
-- ✅ **25-Bond Portfolio Analytics** with real market prices
-- ✅ **Enhanced Risk Metrics:** Duration, Convexity, Option-Adjusted Duration
-- ✅ **Treasury Bond Detection** with ActualActual_ISDA conventions
-- ✅ **Real Market Integration** with PX_MID pricing
-- ✅ **Bloomberg-Grade Calculations** with 85.5% accuracy rate
+## ✨ **Enhanced Metrics (13 Total)**
+
+### Core Metrics
+- **Yield** - Yield to maturity (4.90%)
+- **Duration** - Modified duration (16.35 years)  
+- **Convexity** - Price sensitivity curvature (229.64)
+- **PVBP** - Price Value of Basis Point (0.117)
+
+### Annual Metrics  
+- **Annual Yield** - Annual compounding basis (4.96%)
+- **Annual Duration** - Annual modified duration (15.96 years)
+- **Annual Macaulay Duration** - Annual time weighting (16.35 years)
+
+### Price Metrics
+- **Clean Price** - Price without accrued (71.66)
+- **Dirty Price** - Price with accrued (71.66)  
+- **Accrued Interest** - Interest earned since last payment (0.37)
+
+### Risk Metrics
+- **Macaulay Duration** - Time-weighted cash flows (16.75 years)
+- **Spread** - Credit spread over treasury (when available)
+- **Z-Spread** - Option-adjusted spread (when available)
 
 ## 🚨 **DEPLOYMENT AUTHORITY - READ THIS FIRST**
 **📋 [CORRECT DEPLOYMENT FACTS - FINAL AUTHORITY](🚨_CORRECT_DEPLOYMENT_FACTS_FINAL.md)**

@@ -29,10 +29,34 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from bond_description_parser import SmartBondParser
+    from enhanced_isin_date_parser import SmartBondParserEnhanced
+    ENHANCED_PARSER_AVAILABLE = True
+    print("✅ Enhanced ISIN Date Parser available")
 except ImportError:
     # Fallback path
     sys.path.append('/Users/andyseaman/Notebooks/json_receiver_project/google_analysis10')
-    from bond_description_parser import SmartBondParser
+    try:
+        from bond_description_parser import SmartBondParser
+        from enhanced_isin_date_parser import SmartBondParserEnhanced
+        ENHANCED_PARSER_AVAILABLE = True
+        print("✅ Enhanced ISIN Date Parser available (fallback path)")
+    except ImportError:
+        from bond_description_parser import SmartBondParser
+        ENHANCED_PARSER_AVAILABLE = False
+        print("⚠️ Enhanced parser not available, using standard parser")
+
+# Treasury detection patterns
+TREASURY_ISIN_PATTERNS = [
+    r'^US912[0-9A-Z]{8}$',  # US Treasury ISIN pattern
+    r'^US00206R[0-9A-Z]{4}$',  # Alternative Treasury pattern
+]
+
+TREASURY_DESCRIPTION_PATTERNS = [
+    r'\bTREASURY\b',
+    r'\bT\s+[\d.]+\s+\d{2}/\d{2}/\d{2,4}',  # "T 4.3 02/15/30"
+    r'\bUS\s+TREASURY\b',
+    r'\bUST\b',
+]
 
 
 class BondInputType(Enum):
@@ -40,6 +64,80 @@ class BondInputType(Enum):
     ISIN = "isin"
     DESCRIPTION = "description"
     UNKNOWN = "unknown"
+
+
+class TreasuryDetector:
+    """Detects US Treasury bonds and notes"""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        
+    def is_us_treasury(self, isin: Optional[str] = None, 
+                       description: Optional[str] = None,
+                       country: Optional[str] = None,
+                       issuer: Optional[str] = None) -> bool:
+        """Detect if bond is a US Treasury using multiple criteria"""
+        
+        # Method 1: ISIN pattern matching
+        if isin:
+            isin_clean = isin.strip().upper()
+            for pattern in TREASURY_ISIN_PATTERNS:
+                if re.match(pattern, isin_clean):
+                    self.logger.info(f"🏛️ Treasury detected by ISIN pattern: {isin}")
+                    return True
+        
+        # Method 2: Description pattern matching
+        if description:
+            desc_upper = description.upper()
+            for pattern in TREASURY_DESCRIPTION_PATTERNS:
+                if re.search(pattern, desc_upper):
+                    self.logger.info(f"🏛️ Treasury detected by description pattern: {description}")
+                    return True
+        
+        return False
+
+
+class TreasuryOverride:
+    """Applies correct Treasury conventions, overriding incorrect database data"""
+    
+    def __init__(self):
+        self.detector = TreasuryDetector()
+        self.logger = logging.getLogger(__name__)
+        
+    def apply_treasury_override(self, bond_spec) -> bool:
+        """Apply Treasury convention override to bond specification"""
+        
+        # Detect if this is a Treasury bond
+        is_treasury = self.detector.is_us_treasury(
+            isin=getattr(bond_spec, 'isin', None),
+            description=getattr(bond_spec, 'description', None),
+            country=getattr(bond_spec, 'country', None),
+            issuer=getattr(bond_spec, 'issuer', None)
+        )
+        
+        if not is_treasury:
+            return False
+        
+        # Apply Treasury convention overrides (correct QuantLib conventions)
+        original_day_count = getattr(bond_spec, 'day_count', None)
+        original_business_convention = getattr(bond_spec, 'business_convention', None)
+        
+        # Override with correct Treasury conventions
+        bond_spec.day_count = "ActualActual(Bond)"  # Correct for US Treasuries
+        bond_spec.frequency = "Semiannual"
+        bond_spec.business_convention = "Following"
+        bond_spec.currency = "USD"
+        bond_spec.country = "US"
+        
+        # Mark that override was applied
+        bond_spec.treasury_override_applied = True
+        
+        # Log the override action
+        self.logger.info(f"🏛️ Treasury convention override applied:")
+        self.logger.info(f"   Day Count: {original_day_count} → {bond_spec.day_count}")
+        self.logger.info(f"   Business Convention: {original_business_convention} → {bond_spec.business_convention}")
+        
+        return True
 
 
 @dataclass
@@ -70,6 +168,7 @@ class BondSpecification:
     parser_used: str = 'unknown'
     parsing_success: bool = False
     error_message: Optional[str] = None
+    treasury_override_applied: bool = False  # Track Treasury convention overrides
     
     def to_dict(self) -> Dict:
         """Convert to dictionary for API responses"""
@@ -110,9 +209,14 @@ class UniversalBondParser:
         self.bloomberg_db_path = bloomberg_db_path
         self.logger = logging.getLogger(__name__)
         
-        # Initialize proven SmartBondParser (720 lines of tested code)
+        # Initialize enhanced parser with ISIN date format detection
         try:
-            self.smart_parser = SmartBondParser(self.bloomberg_db_path, self.validated_db_path, self.db_path)
+            if ENHANCED_PARSER_AVAILABLE:
+                self.smart_parser = SmartBondParserEnhanced(self.db_path, self.validated_db_path, self.bloomberg_db_path)
+                self.logger.info("✅ Enhanced ISIN Date Parser initialized")
+            else:
+                self.smart_parser = SmartBondParser(self.bloomberg_db_path, self.validated_db_path, self.db_path)
+                self.logger.info("✅ Standard SmartBondParser initialized (fallback)")
             self.smart_parser_available = True
         except Exception as e:
             self.logger.warning(f"SmartBondParser initialization failed: {e}")
@@ -161,6 +265,11 @@ class UniversalBondParser:
                 if not self._parse_by_isin(input_data, spec):
                     self._parse_by_description(input_data, spec)
             
+            # Step 2.5: Apply Treasury override if detected (NEW!)
+            treasury_override = TreasuryOverride()
+            if treasury_override.apply_treasury_override(spec):
+                self.logger.info(f"✅ Treasury conventions corrected for: {input_data}")
+            
             # Step 3: Validate and finalize
             self._validate_specification(spec)
             
@@ -187,18 +296,18 @@ class UniversalBondParser:
             return BondInputType.UNKNOWN
     
     def _parse_by_isin(self, isin: str, spec: BondSpecification) -> bool:
-        """Parse bond using ISIN database lookup"""
+        """Parse bond using ISIN database lookup - PRIMARY: bloomberg_index.db"""
         try:
-            # Try bonds_data.db first
-            bond_data = self._lookup_isin_in_database(isin, self.db_path)
+            # PRIMARY: Try bloomberg_index.db first (contains validated bond specifications)
+            bond_data = self._lookup_isin_in_database(isin, self.bloomberg_db_path)
             
+            # Fallback: Try validated_quantlib_bonds.db if not found
             if not bond_data:
-                # Try bloomberg_index.db
-                bond_data = self._lookup_isin_in_database(isin, self.bloomberg_db_path)
-            
-            if not bond_data:
-                # Try validated_quantlib_bonds.db
                 bond_data = self._lookup_isin_in_database(isin, self.validated_db_path)
+            
+            # Last resort: Try bonds_data.db (market data, not specifications)
+            if not bond_data:
+                bond_data = self._lookup_isin_in_database(isin, self.db_path)
             
             if bond_data:
                 self._populate_spec_from_database(bond_data, spec)
@@ -220,13 +329,22 @@ class UniversalBondParser:
             return False
             
         try:
-            # Use your proven SmartBondParser - this fixed PANAMA!
-            parsed_result = self.smart_parser.parse_bond_description(description)
+            # Use enhanced parser with ISIN context for intelligent date format detection
+            isin_context = spec.isin if hasattr(spec, 'isin') else None
             
-            if parsed_result and parsed_result.get('success', False):
+            if ENHANCED_PARSER_AVAILABLE and hasattr(self.smart_parser, 'parse_bond_description'):
+                # Enhanced parser with ISIN date format detection
+                parsed_result = self.smart_parser.parse_bond_description(description, isin_context)
+                self.logger.info(f"🧠 Enhanced parser used with ISIN context: {isin_context}")
+            else:
+                # Fallback to standard parser  
+                parsed_result = self.smart_parser.parse_bond_description(description)
+                self.logger.info(f"📝 Standard parser used (no ISIN context)")
+            
+            if parsed_result:
                 self._populate_spec_from_smart_parser(parsed_result, spec)
                 spec.description = description
-                spec.parser_used = 'smart_bond_parser'
+                spec.parser_used = 'enhanced_smart_parser' if ENHANCED_PARSER_AVAILABLE else 'smart_bond_parser'
                 spec.parsing_success = True
                 return True
             
@@ -246,9 +364,16 @@ class UniversalBondParser:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 
-                # Try different table names and column names
-                tables_to_try = ['bonds', 'bond_data', 'bloomberg_bonds', 'validated_bonds', 'bond_details']
-                isin_columns = ['isin', 'ISIN', 'isin_code', 'bond_isin']
+                # FIXED: Use actual table names that exist in the databases
+                if 'validated_quantlib_bonds.db' in db_path:
+                    tables_to_try = ['validated_quantlib_bonds']
+                    isin_columns = ['ISIN']
+                elif 'bloomberg_index.db' in db_path:
+                    tables_to_try = ['validated_quantlib_bonds']
+                    isin_columns = ['isin']
+                else:  # bonds_data.db
+                    tables_to_try = ['legatruu_raw', 'bond_pricing', 'raw', 'live', 'static']
+                    isin_columns = ['isin', 'ISIN']
                 
                 for table in tables_to_try:
                     for isin_col in isin_columns:
@@ -256,10 +381,13 @@ class UniversalBondParser:
                             cursor.execute(f"SELECT * FROM {table} WHERE {isin_col} = ?", (isin,))
                             result = cursor.fetchone()
                             if result:
+                                self.logger.info(f"✅ ISIN {isin} found in {table}.{isin_col}")
                                 return dict(result)
-                        except sqlite3.Error:
+                        except sqlite3.Error as e:
+                            self.logger.debug(f"Table {table}.{isin_col} lookup failed: {e}")
                             continue  # Table or column doesn't exist
                 
+                self.logger.warning(f"⚠️ ISIN {isin} not found in any table in {db_path}")
                 return None
                 
         except Exception as e:
@@ -271,29 +399,50 @@ class UniversalBondParser:
         # Map database columns to specification fields
         field_mappings = {
             'issuer': ['issuer', 'company_name', 'name', 'bond_name', 'NAME'],
-            'coupon_rate': ['coupon', 'coupon_rate', 'rate', 'cpn', 'CPN'],
-            'maturity_date': ['maturity', 'maturity_date', 'mat_date', 'expiry', 'MATURITY'],
-            'day_count': ['day_count', 'day_count_convention', 'dcc'],
-            'frequency': ['frequency', 'payment_frequency', 'freq'],
-            'currency': ['currency', 'crncy', 'curr', 'CRNCY'],
-            'country': ['country', 'country_iso', 'cntry']
+            'coupon_rate': ['coupon', 'coupon_rate', 'rate', 'cpn', 'CPN', 'Coupon'],
+            'maturity_date': ['maturity', 'maturity_date', 'mat_date', 'expiry', 'MATURITY', 'Maturity'],
+            'day_count': ['fixed_day_count', 'day_count', 'day_count_convention', 'dcc'],
+            'frequency': ['fixed_frequency', 'frequency', 'payment_frequency', 'freq'],
+            'business_convention': ['fixed_business_convention', 'business_convention', 'bus_conv'],
+            'currency': ['currency', 'crncy', 'curr', 'CRNCY', 'ccy'],
+            'country': ['country', 'country_iso', 'cntry'],
+            'description': ['description', 'Description', 'bond_description', 'desc']
         }
         
         for spec_field, possible_columns in field_mappings.items():
             for column in possible_columns:
                 if column in bond_data and bond_data[column] is not None:
                     setattr(spec, spec_field, bond_data[column])
-                    break
+                    break  # Use first match found
+        
+        # Apply defaults as specified by user
+        if not spec.currency:
+            spec.currency = 'USD'  # Default currency
     
     def _populate_spec_from_smart_parser(self, parsed_result: Dict, spec: BondSpecification):
         """Populate specification from SmartBondParser result"""
         # Map SmartBondParser output to specification
         if 'issuer' in parsed_result:
             spec.issuer = parsed_result['issuer']
+        
+        # Handle both 'coupon' and 'coupon_rate' field names
         if 'coupon_rate' in parsed_result:
             spec.coupon_rate = parsed_result['coupon_rate']
+        elif 'coupon' in parsed_result:
+            spec.coupon_rate = parsed_result['coupon']
+        
+        # Handle both 'maturity' and 'maturity_date' field names
         if 'maturity_date' in parsed_result:
             spec.maturity_date = parsed_result['maturity_date']
+        elif 'maturity' in parsed_result:
+            spec.maturity_date = parsed_result['maturity']
+            
+        # Handle currency and bond type
+        if 'currency' in parsed_result:
+            spec.currency = parsed_result['currency']
+        if 'bond_type' in parsed_result:
+            spec.country = parsed_result['bond_type']  # Map bond_type to country for now
+            
         if 'conventions' in parsed_result:
             conventions = parsed_result['conventions']
             spec.day_count = conventions.get('day_count', spec.day_count)

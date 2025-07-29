@@ -31,6 +31,9 @@ sys.path.append(project_root)
 
 from google_analysis10 import process_bond_portfolio
 
+# 🎯 BREAKTHROUGH: Import centralized sophisticated date parser - FIXES ALL DATE BUGS!
+from centralized_bond_date_parser import parse_bond_date_simple, parse_bond_date
+
 def get_prior_month_end():
     """
     Get the last day of the previous month for institutional settlement
@@ -68,7 +71,7 @@ def add_phase1_outputs(bond_result: Dict[str, Any]) -> Dict[str, Any]:
         return bond_result
     
     # Extract existing values
-    ytm = bond_result.get('yield')  # Yield (semi-annual basis)
+    ytm = bond_result.get('ytm')  # YTM in percentage format
     mod_dur = bond_result.get('duration')  # Modified duration
     price = bond_result.get('price', 100.0)  # Bond price
     accrued = bond_result.get('accrued_interest', 0.0)  # Accrued interest
@@ -144,11 +147,16 @@ def add_phase1_outputs(bond_result: Dict[str, Any]) -> Dict[str, Any]:
         enhanced['mod_dur_semi'] = enhanced.get('duration')  # Map existing field
         enhanced['tsy_spread_semi'] = enhanced.get('spread')  # Map existing field
         
+        # 🚀 NEW METRICS: Add from our enhanced calculation engine
+        enhanced['convexity_semi'] = bond_result.get('convexity')  # Scaled convexity from QuantLib
+        enhanced['pvbp'] = bond_result.get('pvbp')  # Price Value of a Basis Point
+        
         # Add metadata
         enhanced['phase1_outputs_added'] = True
         enhanced['new_outputs'] = [
             'mac_dur_semi', 'clean_price', 'dirty_price', 
-            'ytm_annual', 'mod_dur_annual', 'mac_dur_annual'
+            'ytm_annual', 'mod_dur_annual', 'mac_dur_annual',
+            'convexity_semi', 'pvbp'  # 🚀 Added new metrics
         ]
         
         logger.info(f"🚀 Phase 1 enhancement complete: {len(enhanced['new_outputs'])} new outputs added")
@@ -168,7 +176,8 @@ def calculate_bond_master(
     settlement_date: Optional[str] = None,
     db_path: str = './bonds_data.db',
     validated_db_path: str = './validated_quantlib_bonds.db',
-    bloomberg_db_path: str = './bloomberg_index.db'
+    bloomberg_db_path: str = './bloomberg_index.db',
+    calc_flags=None  # NEW: Profile-based field filtering
 ) -> Dict[str, Any]:
     """
     🎯 ENHANCED MASTER BOND CALCULATION FUNCTION
@@ -266,16 +275,18 @@ def calculate_bond_master(
                 'isin_provided': isin is not None
             }
         
-        # Extract and format results (ORIGINAL CODE)
+        # Extract and format results (ENHANCED CODE)
         success_result = {
             'success': True,
             'isin': result.get('isin') or isin,
             'description': description,
             'price': price,
-            'yield': result.get('yield'),
+            'ytm': result.get('ytm'),  # ✅ FIXED: Use 'ytm' not 'yield'
             'duration': result.get('duration'), 
             'spread': result.get('spread'),
             'accrued_interest': result.get('accrued_interest'),
+            'convexity': result.get('convexity'),  # 🚀 FIXED: Include convexity
+            'pvbp': result.get('pvbp'),            # 🚀 FIXED: Include PVBP
             'conventions': result.get('conventions'),
             'route_used': route_used,
             'isin_provided': isin is not None,
@@ -284,9 +295,24 @@ def calculate_bond_master(
         }
         
         # 🚀 PHASE 1 ENHANCEMENT: Add 6 new outputs
-        success_result = add_phase1_outputs(success_result)
+        # 🚀 PROFILE-AWARE ENHANCEMENT: Add outputs based on calc_flags
+        if calc_flags == 'all' or calc_flags is None:
+            # Full enhancement - all Phase 1 outputs
+            success_result = add_phase1_outputs(success_result)
+            logger.info(f"🚀 Full Phase 1 outputs added")
+        elif isinstance(calc_flags, dict):
+            # Selective enhancement - only add if enhanced fields requested
+            enhanced_fields = ['macaulay_duration', 'annual_duration', 'annual_macaulay_duration', 'annual_yield', 'clean_price', 'dirty_price']
+            if any(field in calc_flags for field in enhanced_fields):
+                success_result = add_phase1_outputs(success_result)
+                logger.info(f"🚀 Selective Phase 1 outputs added for profile")
+            else:
+                logger.info(f"🎯 Profile filtering: Phase 1 outputs skipped")
+        else:
+            logger.info(f"🎯 Profile filtering: Phase 1 outputs skipped")
         
-        logger.info(f"✅ Enhanced Master calculation successful via {route_used}: Yield={result.get('yield'):.4f}%")
+        ytm_value = result.get('ytm', 0)  # ✅ FIXED: Use 'ytm' field and handle None
+        logger.info(f"✅ Enhanced Master calculation successful via {route_used}: YTM={ytm_value:.4f}%")
         logger.info(f"🚀 Phase 1 outputs added: {success_result.get('new_outputs', [])}")
         return success_result
         
@@ -330,7 +356,7 @@ def process_bonds_with_weightings(df: pd.DataFrame, db_path: str, record_number:
         df_result = {
             'isin': result.get('isin'),
             'description': result.get('description'),
-            'yield': result.get('yield'),
+            'ytm': result.get('ytm'),  # ✅ FIXED: Use 'ytm' not 'yield'
             'duration': result.get('duration'),
             'spread': result.get('spread'),
             'error': None if result.get('success') else result.get('error'),

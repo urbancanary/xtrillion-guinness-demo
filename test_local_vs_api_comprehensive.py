@@ -108,9 +108,9 @@ class LocalVsAPITester:
             validated_db_path = "./validated_quantlib_bonds.db"
             
             if not os.path.exists(db_path):
-                db_path = "./data/bonds_data.db"
+                db_path = "./bonds_data.db"
             if not os.path.exists(validated_db_path):
-                validated_db_path = "./data/validated_quantlib_bonds.db"
+                validated_db_path = "./validated_quantlib_bonds.db"
                 
             logger.info(f"📁 Using database: {db_path}")
             logger.info(f"📁 Using validated database: {validated_db_path}")

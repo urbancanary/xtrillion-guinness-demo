@@ -57,7 +57,7 @@ def test_current_version():
     
     try:
         # Test with the current fixed version
-        result = process_bonds_with_weightings(formatted_data, './data/bonds_data.db')
+        result = process_bonds_with_weightings(formatted_data, './bonds_data.db')
         
         print(f"✅ PROCESSING COMPLETE!")
         print(f"📊 Results DataFrame shape: {result.shape}")
