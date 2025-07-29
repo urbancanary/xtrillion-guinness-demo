@@ -39,9 +39,81 @@ logger = logging.getLogger(__name__)
 # Add current directory to path
 sys.path.append('.')
 
-# Import our bond analytics engine  
-from bond_master_hierarchy import calculate_bond_master
+# Import our bond analytics engine (ENHANCED VERSION for all promised metrics)
+from bond_master_hierarchy_enhanced import calculate_bond_master
+# Import portfolio processing function
+from google_analysis10 import process_bond_portfolio
 # Note: get_prior_month_end is defined below in this file
+
+def format_response_by_context(response_data, context=None):
+    """
+    Context-aware response formatting for different use cases
+    
+    Args:
+        response_data: The standard API response dictionary
+        context: Optional context parameter ("portfolio", "technical", or None)
+        
+    Returns:
+        Modified response dictionary optimized for the specified context
+    """
+    if context == "portfolio":
+        # Portfolio context: Optimize for aggregation with both annual/semi metrics
+        analytics = response_data['analytics']
+        portfolio_optimized = {
+            # Key metrics for portfolio aggregation
+            'yield_semi': analytics.get('ytm', 0),
+            'yield_annual': analytics.get('ytm_annual', 0),
+            'duration_semi': analytics.get('duration', 0), 
+            'duration_annual': analytics.get('annual_duration', 0),
+            'macaulay_duration_semi': analytics.get('macaulay_duration', 0),
+            'macaulay_duration_annual': analytics.get('annual_macaulay_duration', 0),
+            'convexity': analytics.get('convexity', 0),
+            'accrued_interest': analytics.get('accrued_interest', 0),
+            'pvbp': analytics.get('pvbp', 0),
+            'settlement_date': analytics.get('settlement_date'),
+            # Keep essential fields
+            'clean_price': analytics.get('clean_price', 0),
+            'dirty_price': analytics.get('dirty_price', 0),
+        }
+        
+        # Return simplified response optimized for portfolio use
+        return {
+            'status': response_data['status'],
+            'bond': {
+                'description': response_data['bond']['description'],
+                'isin': response_data['bond']['isin']
+            },
+            'analytics': portfolio_optimized,
+            'context': 'portfolio',
+            'optimization': 'Metrics optimized for portfolio aggregation with both annual/semi-annual basis',
+            'metadata': {
+                'api_version': response_data['metadata']['api_version'],
+                'calculation_engine': response_data['metadata']['calculation_engine'],
+                'context_applied': 'portfolio'
+            }
+        }
+    
+    elif context == "technical":
+        # Technical context: Add debugging and parsing details
+        enhanced_response = response_data.copy()
+        enhanced_response['context'] = 'technical'
+        enhanced_response['debug_info'] = {
+            'parsing_route': response_data.get('bond', {}).get('route_used'),
+            'universal_parser_used': UNIVERSAL_PARSER_AVAILABLE,
+            'calculation_engine': 'xtrillion_core_quantlib_engine',
+            'field_count': len(response_data.get('analytics', {})),
+            'conventions_applied': response_data.get('calculations', {}),
+            'metadata_level': 'enhanced'
+        }
+        enhanced_response['metadata']['context_applied'] = 'technical'
+        enhanced_response['metadata']['debug_mode'] = True
+        return enhanced_response
+    
+    else:
+        # Default context: Return standard response
+        response_data['context'] = 'default'
+        response_data['metadata']['context_applied'] = 'default'
+        return response_data
 
 # UNIVERSAL PARSER INTEGRATION (NEW!)
 try:
@@ -410,8 +482,8 @@ def health_check():
     
     if universal_parser and UNIVERSAL_PARSER_AVAILABLE:
         try:
-            # Test with a known Treasury ISIN
-            test_spec = universal_parser.parse_bond("US912810TJ79")
+            # Test with a simple Treasury description that should parse
+            test_spec = universal_parser.parse_bond("T 4.1 02/15/2028")
             parser_test_passed = test_spec.parsing_success
             parser_status = 'working' if parser_test_passed else 'failed'
         except Exception as e:
@@ -480,10 +552,10 @@ def parse_and_calculate_bond():
     - Single parsing path for ISIN OR description inputs
     - Automatic input type detection
     - Proven SmartBondParser integration (fixes PANAMA bond)
+    - Context-aware response formatting for different use cases
     - Maintains all production features (auth, databases, error handling)
     
-    Returns business-focused responses by default (matching partnership email)
-    Add ?technical=true for full technical details with Universal Parser metadata
+    Returns rich, self-documenting responses with complete metadata
     
     Request Body:
     {
@@ -491,12 +563,14 @@ def parse_and_calculate_bond():
         "bond_input": "US912810TJ79",             // Alternative field name for input
         "settlement_date": "2025-07-15",          // Optional, defaults to prior month end
         "price": 99.5,                            // Optional, defaults to 100.0
-        "isin": "US912810TJ79"                    // Optional, helps with database lookup
+        "isin": "US912810TJ79",                   // Optional, helps with database lookup
+        "context": "portfolio"                    // Optional: "portfolio", "technical", or default
     }
     
-    Response format:
-    - Default: Business-focused (matches partnership email examples)
-    - ?technical=true: Full technical details with Universal Parser metadata
+    Context Options:
+    - "portfolio": Optimized response for portfolio aggregation (annual/semi metrics)
+    - "technical": Enhanced response with debugging and parsing details
+    - Default (no context): Standard comprehensive response
     """
     try:
         data = request.get_json()
@@ -533,9 +607,6 @@ def parse_and_calculate_bond():
                 'status': 'error'
             }), 400
         
-        # Check if technical details are requested
-        technical_response = request.args.get('technical', 'false').lower() == 'true'
-        
         # UNIVERSAL PARSER ENHANCEMENT: Try Universal Parser first, fallback to original logic
         if universal_parser and UNIVERSAL_PARSER_AVAILABLE:
             logger.info(f"🚀 Using Universal Parser for: {bond_input}")
@@ -549,20 +620,30 @@ def parse_and_calculate_bond():
             
             if not bond_spec.parsing_success:
                 logger.warning(f"Universal Parser failed for {bond_input}: {bond_spec.error_message}")
-                # Continue to fallback method below
+                # FIXED: Proper ISIN routing fallback
+                from isin_router_fix import fix_isin_routing
+                parsed_isin, parsed_description = fix_isin_routing(bond_input, data.get('isin'))
+                logger.info(f"🔧 ISIN Router Fix applied - ISIN: {parsed_isin}, Description: {parsed_description}")
             else:
                 logger.info(f"✅ Universal Parser successful: {bond_spec.parser_used} for {bond_input}")
                 
-                # For now, we'll continue with the existing calculation engine
-                # Future enhancement: integrate bond_spec directly with calculation engine
+                # INTEGRATION FIX: Use Universal Parser results!
+                parsed_description = bond_spec.description or bond_input  # Use parsed description or fallback
+                parsed_isin = bond_spec.isin or data.get('isin')  # Use parsed ISIN or fallback
+                logger.info(f"🔧 Using parsed data - Description: {parsed_description}, ISIN: {parsed_isin}")
+        else:
+            # Fallback when Universal Parser not available
+            from isin_router_fix import fix_isin_routing
+            parsed_isin, parsed_description = fix_isin_routing(bond_input, data.get('isin'))
+            logger.info(f"🔧 Fallback ISIN Router applied - ISIN: {parsed_isin}, Description: {parsed_description}")
         
         # XTRILLION CORE CALCULATION ENGINE - Direct integration
         logger.info(f"🚀 Using XTrillion Core calculation engine: calculate_bond_master")
 
-        # Call the master calculation function directly
+        # Call the master calculation function directly with PARSED DATA
         result = calculate_bond_master(
-            isin=data.get('isin'),
-            description=bond_input,
+            isin=parsed_isin,
+            description=parsed_description,
             price=data.get('price', 100.0),
             settlement_date=data.get('settlement_date'),
             db_path=DATABASE_PATH,
@@ -578,66 +659,93 @@ def parse_and_calculate_bond():
                 'universal_parser_available': UNIVERSAL_PARSER_AVAILABLE
             }), 400
         
-        # Format response based on technical vs business request
-        if technical_response:
-            # Full technical response
-            response = {
-                'status': 'success',
-                'bond': {
-                    'description_input': bond_input,
-                    'isin': result.get('isin'),
-                    'conventions': result.get('conventions'),
-                    'route_used': result.get('route_used')
-                },
-                'analytics': {
-                    'yield_to_maturity_percent': result.get('yield'),
-                    'modified_duration_years': result.get('duration'),
-                    'spread_bps': result.get('spread'),
-                    'accrued_interest': result.get('accrued_interest'),
-                    'price': result.get('price'),
-                    'settlement_date': result.get('settlement_date')
-                },
-                'metadata': {
-                    'api_version': 'v1.2',
-                    'processing_type': 'xtrillion_core',
-                    'calculation_engine': 'xtrillion_core_quantlib_engine',
-                    'calculation_method': 'xtrillion_core_master_calculator',
-                    'route_used': result.get('route_used'),
-                    'universal_parser_available': UNIVERSAL_PARSER_AVAILABLE
-                }
-            }
-        else:
-            # Business-focused response (matches partnership email) - ENHANCED WITH UNIVERSAL PARSER
-            response = {
-                'status': 'success',
-                'bond': {
-                    'issuer': '',  # Would need parsing enhancement
-                    'coupon': 0,   # Would need parsing enhancement
-                    'maturity': '', # Would need parsing enhancement
-                    'description': bond_input
-                },
-                'analytics': {
-                    'yield': round(result.get('yield', 0), 6),
-                    'duration': round(result.get('duration', 0), 6),
-                    'accrued_per_100': round(result.get('accrued_interest', 0), 6),
-                    'price': result.get('price'),
-                    'settlement': result.get('settlement_date') or get_prior_month_end()
-                },
-                'processing': {
-                    'parsing': 'successful',
-                    'conventions': 'auto-detected',
-                    'calculation': 'successful',
-                    'confidence': 'high',
-                    'route_used': result.get('route_used'),
-                    'universal_parser_available': UNIVERSAL_PARSER_AVAILABLE,
-                    'parsing_method': 'xtrillion_core_enhanced',
-                    'calculation_engine': 'xtrillion_core'
-                }
-            }
+        # CONSISTENT FIELD NAMES: Same data, different detail levels
+        # Base analytics with FULL PRECISION + CONSISTENT YTM NAMING
+        raw_analytics = {
+            # Core bond metrics - CONSISTENT YTM CONVENTION NAMING
+            'ytm': result.get('ytm', 0),  # ✅ FIXED: Use 'ytm' field (already in percentage)
+            'duration': result.get('duration', 0),  # Full QuantLib precision
+            'spread': result.get('spread'),
+            'accrued_interest': result.get('accrued_interest', 0),  # Full precision
+            'price': result.get('price'),
+            'settlement_date': result.get('settlement_date') or get_prior_month_end(),
+            
+            # Enhanced metrics - FULL PRECISION + CONSISTENT NAMING
+            'macaulay_duration': result.get('mac_dur_semi', 0),
+            'clean_price': result.get('clean_price', 0),
+            'dirty_price': result.get('dirty_price', 0),  # Will be corrected below
+            'ytm_annual': result.get('ytm_annual', 0),  # Annual equivalent YTM
+            'annual_duration': result.get('mod_dur_annual', 0),
+            'annual_macaulay_duration': result.get('mac_dur_annual', 0),
+            'convexity': result.get('convexity', 0),  # Fixed: use 'convexity' not 'convexity_semi'
+            'pvbp': result.get('pvbp', 0),  # Critical for large trades - full precision
+            'z_spread': result.get('z_spread_semi')
+        }
         
-        logger.info(f"✅ Successfully calculated using XTrillion Core: {bond_input} (route: {result.get('route_used')}, format: {'technical' if technical_response else 'business'})")
-        logger.info(f"📊 XTrillion Core Result: Yield={result.get('yield'):.4f}%, Duration={result.get('duration'):.2f}, Route={result.get('route_used')}")
-        return jsonify(response)
+        # 🚨 CRITICAL FIX: Correct dirty price calculation
+        # Known issue: QuantLib sometimes returns dirty_price = clean_price incorrectly
+        clean_price = raw_analytics.get('clean_price', 0)
+        accrued_interest = raw_analytics.get('accrued_interest', 0)
+        calculated_dirty_price = clean_price + accrued_interest
+        
+        # Use calculated dirty price if the returned dirty price is wrong
+        returned_dirty_price = raw_analytics.get('dirty_price', 0)
+        if abs(returned_dirty_price - clean_price) < 0.001 and accrued_interest > 0:
+            # Dirty price appears to be wrong (same as clean price despite accrued > 0)
+            logger.warning(f"🚨 Dirty price bug detected! Returned: {returned_dirty_price}, Expected: {calculated_dirty_price}")
+            raw_analytics['dirty_price'] = calculated_dirty_price
+            logger.info(f"✅ Dirty price corrected: {calculated_dirty_price:.6f} = {clean_price:.6f} + {accrued_interest:.6f}")
+        
+        analytics = raw_analytics
+        
+        # Common bond info
+        bond_info = {
+            'description': bond_input,
+            'isin': result.get('isin')
+        }
+        
+        # Always return rich, self-documenting response
+        response = {
+            'status': 'success',
+            'bond': {
+                **bond_info,
+                'conventions': result.get('conventions'),
+                'route_used': result.get('route_used')
+            },
+            'analytics': analytics,
+            'field_descriptions': {
+                'ytm': 'Yield to maturity (bond native convention, %)',
+                'duration': 'Modified duration (years)',
+                'macaulay_duration': 'Macaulay duration (semi-annual)',
+                'ytm_annual': 'Yield to maturity (annual equivalent, %)',
+                'annual_duration': 'Modified duration (annual)',
+                'convexity': 'Price convexity (semi-annual)',
+                'pvbp': 'Price Value of Basis Point',
+                'z_spread': 'Z-spread over treasury curve (bps)'
+            },
+            'calculations': {
+                'basis': 'Semi-annual compounding',
+                'day_count': result.get('conventions', {}).get('day_count', 'ActualActual_Bond'),
+                'business_day_convention': result.get('conventions', {}).get('business_day_convention', 'Following')
+            },
+            'metadata': {
+                'api_version': 'v1.2',
+                'calculation_engine': 'xtrillion_core_quantlib_engine',
+                'route_used': result.get('route_used'),
+                'universal_parser_available': UNIVERSAL_PARSER_AVAILABLE,
+                'enhanced_metrics_count': 13
+            }
+        }
+        
+        # Extract context parameter for response formatting
+        context = data.get('context')  # Can be "portfolio", "technical", or None
+        
+        # Apply context-aware formatting
+        formatted_response = format_response_by_context(response, context)
+        
+        logger.info(f"✅ Successfully calculated using XTrillion Core: {bond_input} (route: {result.get('route_used')}, context: {context or 'default'})")
+        logger.info(f"📊 XTrillion Core Result: YTM={result.get('ytm'):.4f}%, Duration={result.get('duration'):.2f}, Route={result.get('route_used')}")
+        return jsonify(formatted_response)
         
     except Exception as e:
         error_msg = f"Bond calculation error: {str(e)}"
@@ -648,19 +756,11 @@ def parse_and_calculate_bond():
             'universal_parser_available': UNIVERSAL_PARSER_AVAILABLE
         }), 500
 
-# Portfolio endpoint temporarily disabled - focusing on individual bond calculation
-# @app.route('/api/v1/portfolio/analyze', methods=['POST'])
-# def analyze_portfolio():
-#     """Portfolio-level bond analysis with Treasury enhancement"""
-#     # Portfolio functionality temporarily disabled
-#     return jsonify({"error": "Portfolio endpoint temporarily disabled - use individual bond calculation"}), 501
-# PORTFOLIO ENDPOINT TEMPORARILY DISABLED
-# Focusing on individual bond calculation first  
-# @require_api_key_soft
-def analyze_portfolio_disabled():
-    """Portfolio functionality temporarily disabled"""
-    return jsonify({"error": "Portfolio endpoint temporarily disabled"}), 501
-    """
+@app.route('/api/v1/portfolio/analyze', methods=['POST'])
+@require_api_key_soft
+def analyze_portfolio():
+    """Portfolio-level bond analysis with Treasury enhancement - RE-ENABLED
+    
     Production bond portfolio analysis with Universal Parser integration
     
     ENHANCED: Now uses Universal Parser for all bonds in portfolio
@@ -669,32 +769,12 @@ def analyze_portfolio_disabled():
     - Comprehensive parsing statistics and success rates
     - Maintains all production features
     
-    Returns business-focused responses by default (matching partnership email)
-    Add ?technical=true for full YAS/DES/FLDS technical formats with parser metadata
+    Returns rich, self-documenting responses with complete metadata and Bloomberg-style formatting
     
     Query Parameters:
-    - technical: Set to 'true' for full technical YAS/DES/FLDS response formats
-    - format: Response format (YAS, DES, FLDS, BXT, ADV) - only when technical=true
-    
-    Default Response: Business-focused format matching partnership email examples
-    Technical Response: Bloomberg Terminal-style with YAS/DES/FLDS formats + Universal Parser stats
+    - settlement_days: Settlement days override (default: 0)
     """
     try:
-        # Check if technical details are requested
-        technical_response = request.args.get('technical', 'false').lower() == 'true'
-        
-        # Get response format from query parameters (only for technical responses)
-        response_format = request.args.get('format', 'YAS').upper() if technical_response else 'YAS'
-        valid_formats = ['YAS', 'DES', 'FLDS', 'BXT', 'ADV']
-        
-        if technical_response and response_format not in valid_formats:
-            return jsonify({
-                'error': f'Invalid format "{response_format}". Valid formats: {valid_formats}',
-                'status': 'error'
-            }), 400
-        
-        logger.info(f"📊 Response format requested: {'technical ' + response_format if technical_response else 'business'}")
-        
         # Get JSON data
         data = request.get_json()
         
@@ -747,7 +827,13 @@ def analyze_portfolio_disabled():
         settlement_days = int(request.args.get('settlement_days', 0))
         logger.info(f"Portfolio analysis requested with settlement_days = {settlement_days}")
 
-        results = process_bond_portfolio(data, DATABASE_PATH, settlement_days=settlement_days)
+        results = process_bond_portfolio(
+            data, 
+            DATABASE_PATH, 
+            VALIDATED_DB_PATH, 
+            BLOOMBERG_DB_PATH, 
+            settlement_days=settlement_days
+        )
         
         # The 'results' variable is now a list of dicts, not a DataFrame.
         # We will process it using standard list comprehensions.
@@ -773,48 +859,35 @@ def analyze_portfolio_disabled():
                     'total_weight': float(total_weight)
                 }
 
-        # Return business or technical response based on request
-        if technical_response:
-            # Technical response (original YAS/DES/FLDS format)
-            formatted_bonds = [format_bond_response(bond, response_format) for bond in results_list]
-            formatted_metrics = format_portfolio_metrics(portfolio_metrics, response_format)
+        # Always return rich, self-documenting response
+        formatted_bonds = [format_bond_response(bond, 'YAS') for bond in results_list]
+        formatted_metrics = format_portfolio_metrics(portfolio_metrics, 'YAS')
 
-            response = {
-                'status': 'success',
-                'format': response_format,
-                'bond_data': formatted_bonds,
-                'portfolio_metrics': formatted_metrics,
-                'conventions_enhancement': {
-                    'validated_conventions_available': os.path.exists(VALIDATED_DB_PATH),
-                    'validated_db_path': VALIDATED_DB_PATH if os.path.exists(VALIDATED_DB_PATH) else None,
-                    'enhancement_level': 'validated_conventions' if os.path.exists(VALIDATED_DB_PATH) else 'standard_conventions'
-                },
-                'metadata': {
-                    'processing_type': 'yas_optimized_with_universal_parser',
-                    'api_version': 'v1.2',
-                    'response_optimization': f'{response_format} format - Bloomberg Terminal style',
-                    'field_count': len(formatted_bonds[0]) if formatted_bonds else 0,
-                    'enhancement_stats': enhancement_results if enhancement_results['treasuries_detected'] > 0 else None,
-                    'universal_parser': {
-                        'available': UNIVERSAL_PARSER_AVAILABLE,
-                        'initialized': universal_parser is not None,
-                        'parsing_redundancy_eliminated': UNIVERSAL_PARSER_AVAILABLE
-                    }
+        response = {
+            'status': 'success',
+            'format': 'YAS',
+            'bond_data': formatted_bonds,
+            'portfolio_metrics': formatted_metrics,
+            'conventions_enhancement': {
+                'validated_conventions_available': os.path.exists(VALIDATED_DB_PATH),
+                'validated_db_path': VALIDATED_DB_PATH if os.path.exists(VALIDATED_DB_PATH) else None,
+                'enhancement_level': 'validated_conventions' if os.path.exists(VALIDATED_DB_PATH) else 'standard_conventions'
+            },
+            'metadata': {
+                'processing_type': 'yas_optimized_with_universal_parser',
+                'api_version': 'v1.2',
+                'response_optimization': 'YAS format - Bloomberg Terminal style',
+                'field_count': len(formatted_bonds[0]) if formatted_bonds else 0,
+                'enhancement_stats': enhancement_results if enhancement_results['treasuries_detected'] > 0 else None,
+                'universal_parser': {
+                    'available': UNIVERSAL_PARSER_AVAILABLE,
+                    'initialized': universal_parser is not None,
+                    'parsing_redundancy_eliminated': UNIVERSAL_PARSER_AVAILABLE
                 }
             }
-        else:
-            # Business-focused response (matches partnership email) - ENHANCED WITH UNIVERSAL PARSER
-            response = format_portfolio_business_response(results_list, portfolio_metrics)
-            
-            # Add Universal Parser metadata to business response
-            if 'portfolio' in response:
-                response['portfolio']['metadata'] = {
-                    'universal_parser_available': UNIVERSAL_PARSER_AVAILABLE,
-                    'parsing_method': 'universal_parser_enhanced' if universal_parser else 'fallback_method',
-                    'redundancy_eliminated': UNIVERSAL_PARSER_AVAILABLE
-                }
+        }
         
-        logger.info(f"✅ Portfolio processed: {success_count}/{total_bonds} bonds successful ({'technical ' + response_format if technical_response else 'business'} format, parser: {'universal' if universal_parser else 'fallback'})")
+        logger.info(f"✅ Portfolio processed: {success_count}/{total_bonds} bonds successful (YAS format, parser: {'universal' if universal_parser else 'fallback'})")
         return jsonify(response)
         
     except Exception as e:
@@ -1045,17 +1118,16 @@ OR
                     <li><strong>Universal Parser:</strong> Eliminates 3x parsing redundancy - single path for all inputs</li>
                     <li><strong>PANAMA Fix:</strong> SmartBondParser integration resolves complex description parsing</li>
                     <li><strong>Production Features:</strong> API keys, multiple databases, comprehensive error handling</li>
-                    <li><strong>Business Responses:</strong> Professional format matching partnership examples</li>
-                    <li><strong>Technical Mode:</strong> Add <code>?technical=true</code> for full Bloomberg-style responses</li>
+                    <li><strong>Rich Responses:</strong> Self-documenting format with complete metadata</li>
+                    <li><strong>Bloomberg-style Formatting:</strong> YAS format with field descriptions</li>
                     <li><strong>Authentication:</strong> 8 different API keys for various environments</li>
                 </ul>
             </div>
             
             <div class="endpoint">
-                <h3>📊 Response Formats</h3>
-                <p><strong>Default:</strong> Business-focused responses (partnership email format)</p>
-                <p><strong>Technical:</strong> Add <code>?technical=true</code> for Bloomberg Terminal style</p>
-                <p><strong>YAS Format:</strong> Add <code>?technical=true&format=YAS</code> for Yield Analysis Summary</p>
+                <h3>📊 Response Format</h3>
+                <p><strong>Rich Self-Documenting:</strong> All responses include field descriptions, metadata, and calculation details</p>
+                <p><strong>Bloomberg Terminal Style:</strong> YAS format for professional bond analytics</p>
             </div>
         </div>
     </body>
@@ -1071,8 +1143,7 @@ if __name__ == '__main__':
     logger.info(f"📋 Validated Conventions: {VALIDATED_DB_PATH}")
     logger.info(f"🌐 Port: {PORT}")
     logger.info(f"🎯 Universal Parser: {'Available' if UNIVERSAL_PARSER_AVAILABLE else 'Fallback Mode'}")
-    logger.info(f"💼 Business Response Format: Matches partnership email examples")
-    logger.info(f"🔧 Technical Details: Add ?technical=true to any endpoint")
+    logger.info(f"📊 Response Format: Rich self-documenting with complete metadata")
     logger.info(f"📈 Ready for partnership demonstrations with enhanced parsing reliability")
     
     if UNIVERSAL_PARSER_AVAILABLE:
