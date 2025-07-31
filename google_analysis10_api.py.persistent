@@ -44,7 +44,7 @@ from bond_master_hierarchy_enhanced import calculate_bond_master
 # Import portfolio processing function
 from google_analysis10 import process_bond_portfolio
 # Import GCS database manager
-from gcs_database_manager import ensure_databases_available
+from persistent_database_manager import ensure_databases_available
 # Note: get_prior_month_end is defined below in this file
 
 def check_bond_maturity(result, settlement_date=None):
@@ -710,40 +710,21 @@ BLOOMBERG_DB_PATH = SECONDARY_DATABASE_PATH
 PORT = int(os.environ.get('PORT', 8080))
 VERSION = '10.0.0'
 
-# Verify database exists on startup (conditional on database source)
-database_source_early = os.environ.get('DATABASE_SOURCE', 'gcs')
-
-if database_source_early == 'embedded':
-    # For embedded databases, check immediately
-    if not os.path.exists(DATABASE_PATH):
-        logger.error(f"❌ Bond database not found at: {DATABASE_PATH}")
-        logger.error("Production service requires bond reference database!")
-        sys.exit(1)
-    else:
-        logger.info(f"✅ Bond database loaded: {DATABASE_PATH}")
-        logger.info(f"📊 Database size: {os.path.getsize(DATABASE_PATH) / (1024*1024):.1f}MB")
-        
-        # Initialize Universal Parser after database verification
-        parser_initialized = initialize_universal_parser()
-        if parser_initialized:
-            logger.info("🎯 Universal Parser ready - parsing redundancy eliminated!")
-        else:
-            logger.warning("⚠️ Universal Parser initialization failed - using fallback parsing")
+# Verify database exists on startup
+if not os.path.exists(DATABASE_PATH):
+    logger.error(f"❌ Bond database not found at: {DATABASE_PATH}")
+    logger.error("Production service requires bond reference database!")
+    sys.exit(1)
 else:
-    # For GCS databases, defer check until after download
-    logger.info("🔍 GCS database mode - deferring database verification until after download")
+    logger.info(f"✅ Bond database loaded: {DATABASE_PATH}")
+    logger.info(f"📊 Database size: {os.path.getsize(DATABASE_PATH) / (1024*1024):.1f}MB")
     
-    # Still try to initialize parser if databases happen to exist
-    if os.path.exists(DATABASE_PATH):
-        logger.info(f"✅ Database already exists: {DATABASE_PATH}")
-        parser_initialized = initialize_universal_parser()
-        if parser_initialized:
-            logger.info("🎯 Universal Parser ready - parsing redundancy eliminated!")
-        else:
-            logger.warning("⚠️ Universal Parser initialization failed - using fallback parsing")
+    # Initialize Universal Parser after database verification
+    parser_initialized = initialize_universal_parser()
+    if parser_initialized:
+        logger.info("🎯 Universal Parser ready - parsing redundancy eliminated!")
     else:
-        logger.info("📥 Database will be downloaded from GCS during startup")
-        parser_initialized = False
+        logger.warning("⚠️ Universal Parser initialization failed - using fallback parsing")
 
 # ENHANCED: Check for validated conventions database
 if os.path.exists(VALIDATED_DB_PATH):
@@ -1105,38 +1086,6 @@ def portfolio_analysis():
                 },
                 'status': 'error'
             }), 400
-
-        # ✅ TASK 1 FIX: Empty portfolio validation with debug logging
-        portfolio_data = data.get('data', [])
-        logger.info(f"🔍 VALIDATION DEBUG: portfolio_data = {portfolio_data}, length = {len(portfolio_data)}")
-        
-        if not portfolio_data or len(portfolio_data) == 0:
-            logger.warning("🚨 EMPTY PORTFOLIO DETECTED - Returning 400 error")
-            return jsonify({
-                'status': 'error',
-                'error': 'Portfolio data cannot be empty',
-                'message': 'Please provide at least one bond in the data array',
-                'expected_format': {
-                    'data': [
-                        {
-                            'description': 'T 3 15/08/52',
-                            'price': 71.66,
-                            'weight': 60.0
-                        }
-                    ]
-                }
-            }), 400
-
-        logger.info(f"✅ VALIDATION PASSED: Processing {len(portfolio_data)} bonds")
-
-        # Validate individual bond entries
-        for i, bond in enumerate(portfolio_data):
-            if not bond.get('description') and not bond.get('BOND_CD'):
-                return jsonify({
-                    'status': 'error',
-                    'error': f'Bond {i+1} missing description',
-                    'message': 'Each bond must have either "description" or "BOND_CD" field'
-                }), 400
         
         portfolio_size = len(data['data'])
         logger.info(f"📊 Processing portfolio: {portfolio_size} bonds using production database")
@@ -1178,28 +1127,19 @@ def portfolio_analysis():
         results_list = results
 
         # Calculate portfolio-level metrics
-        # ✅ FIXED: Use correct field names from calculation engine with strict None handling
-        successful_bonds = [b for b in results_list if 
-                          'error' not in b and 
-                          b.get('ytm') is not None and 
-                          b.get('duration') is not None and
-                          b.get('weighting') is not None]
+        # ✅ FIXED: Use correct field names from calculation engine
+        successful_bonds = [b for b in results_list if 'error' not in b and b.get('ytm') is not None and b.get('weighting') is not None]
         total_bonds = len(results_list)
         success_count = len(successful_bonds)
 
         portfolio_metrics = {}
         if success_count > 0:
-            total_weight = sum(float(b['weighting']) for b in successful_bonds)
+            total_weight = sum(b['weighting'] for b in successful_bonds)
             if total_weight > 0:
-                # Safe calculation with strict None checking
-                portfolio_yield = sum(float(b['ytm'] or 0) * float(b['weighting']) for b in successful_bonds) / total_weight
-                portfolio_duration = sum(float(b['duration'] or 0) * float(b['weighting']) for b in successful_bonds) / total_weight
-                portfolio_spread = sum(float(b.get('g_spread') or 0) * float(b['weighting']) for b in successful_bonds) / total_weight
-                
                 portfolio_metrics = {
-                    'portfolio_yield': float(portfolio_yield),
-                    'portfolio_duration': float(portfolio_duration),
-                    'portfolio_spread': float(portfolio_spread),
+                    'portfolio_yield': float(sum(b['ytm'] * b['weighting'] for b in successful_bonds) / total_weight),
+                    'portfolio_duration': float(sum(b['duration'] * b['weighting'] for b in successful_bonds) / total_weight),
+                    'portfolio_spread': float(sum((b.get('g_spread', 0) or 0) * b['weighting'] for b in successful_bonds) / total_weight),
                     'total_bonds': total_bonds,
                     'successful_bonds': success_count,
                     'failed_bonds': total_bonds - success_count,
@@ -1533,41 +1473,13 @@ if __name__ == '__main__':
     logger.info(f"📊 Response Format: Rich self-documenting with complete metadata")
     logger.info(f"📈 Ready for partnership demonstrations with enhanced parsing reliability")
     
-    # 🔧 PRODUCTION_OPTIMIZED: Skip GCS download when databases embedded
-    database_source = os.environ.get('DATABASE_SOURCE', 'gcs')
-    
-    if database_source == 'embedded':
-        logger.info("✅ Using embedded databases (no GCS download needed)")
-        # Verify embedded databases exist
-        if os.path.exists(DATABASE_PATH) and os.path.exists(VALIDATED_DB_PATH):
-            logger.info(f"✅ Embedded databases verified: {os.path.getsize(DATABASE_PATH)/(1024*1024):.1f}MB primary")
-        else:
-            logger.error("❌ Embedded databases missing - check Dockerfile.production")
-            sys.exit(1)
+    # 🔧 CRITICAL: Fetch databases from GCS before starting API
+    logger.info("🔍 Ensuring bond databases are available from GCS...")
+    if ensure_databases_available():
+        logger.info("✅ All required databases successfully fetched from GCS")
     else:
-        logger.info("🔍 Ensuring bond databases are available from GCS...")
-        if ensure_databases_available():
-            logger.info("✅ All required databases successfully fetched from GCS")
-            
-            # Post-GCS download verification and parser initialization
-            if os.path.exists(DATABASE_PATH):
-                logger.info(f"✅ Database verified after GCS download: {os.path.getsize(DATABASE_PATH)/(1024*1024):.1f}MB")
-                
-                # Initialize Universal Parser after successful GCS download
-                if not globals().get('parser_initialized', False):
-                    parser_initialized = initialize_universal_parser()
-                    if parser_initialized:
-                        logger.info("🎯 Universal Parser initialized after GCS download")
-                    else:
-                        logger.warning("⚠️ Universal Parser initialization failed after GCS download")
-                        
-            else:
-                logger.error("❌ Database still missing after GCS download - critical error")
-                sys.exit(1)
-        else:
-            logger.error("❌ Failed to fetch databases from GCS - API may not function properly")
-            logger.error("💡 Check GCS bucket access and database availability")
-            sys.exit(1)
+        logger.error("❌ Failed to fetch databases from GCS - API may not function properly")
+        logger.error("💡 Check GCS bucket access and database availability")
     
     if UNIVERSAL_PARSER_AVAILABLE:
         logger.info(f"✅ Parsing redundancy eliminated - single path for ALL bond inputs")

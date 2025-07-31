@@ -1,0 +1,214 @@
+{
+  "functions": [
+    {
+      "id": "YIELD",
+      "name": "YIELD",
+      "namespace": "BOND",
+      "description": "Calculate bond yield to maturity with institutional accuracy",
+      "helpUrl": "https://github.com/urbancanary/excel-bond-bridge#yield",
+      "result": {
+        "type": "number",
+        "dimensionality": "scalar"
+      },
+      "parameters": [
+        {
+          "name": "bond_description",
+          "description": "Bond description (e.g., 'T 3 15/08/52')",
+          "type": "string",
+          "dimensionality": "scalar"
+        },
+        {
+          "name": "price",
+          "description": "Bond price (default: 100.0)",
+          "type": "number",
+          "dimensionality": "scalar",
+          "optional": true
+        }
+      ],
+      "options": {
+        "batch": false,
+        "stream": false
+      }
+    },
+    {
+      "id": "DURATION",
+      "name": "DURATION", 
+      "namespace": "BOND",
+      "description": "Calculate bond modified duration with institutional accuracy",
+      "helpUrl": "https://github.com/urbancanary/excel-bond-bridge#duration",
+      "result": {
+        "type": "number",
+        "dimensionality": "scalar"
+      },
+      "parameters": [
+        {
+          "name": "bond_description",
+          "description": "Bond description (e.g., 'T 3 15/08/52')",
+          "type": "string",
+          "dimensionality": "scalar"
+        },
+        {
+          "name": "price",
+          "description": "Bond price (default: 100.0)",
+          "type": "number", 
+          "dimensionality": "scalar",
+          "optional": true
+        }
+      ],
+      "options": {
+        "batch": false,
+        "stream": false
+      }
+    },
+    {
+      "id": "SPREAD",
+      "name": "SPREAD",
+      "namespace": "BOND", 
+      "description": "Calculate bond credit spread with institutional accuracy",
+      "helpUrl": "https://github.com/urbancanary/excel-bond-bridge#spread",
+      "result": {
+        "type": "number",
+        "dimensionality": "scalar"
+      },
+      "parameters": [
+        {
+          "name": "bond_description",
+          "description": "Bond description (e.g., 'ECOPETROL SA, 5.875%, 28-May-2045')",
+          "type": "string",
+          "dimensionality": "scalar"
+        },
+        {
+          "name": "price",
+          "description": "Bond price (default: 100.0)",
+          "type": "number",
+          "dimensionality": "scalar", 
+          "optional": true
+        }
+      ],
+      "options": {
+        "batch": false,
+        "stream": false
+      }
+    },
+    {
+      "id": "ACCRUED",
+      "name": "ACCRUED",
+      "namespace": "BOND",
+      "description": "Calculate bond accrued interest with institutional accuracy",
+      "helpUrl": "https://github.com/urbancanary/excel-bond-bridge#accrued",
+      "result": {
+        "type": "number",
+        "dimensionality": "scalar"
+      },
+      "parameters": [
+        {
+          "name": "bond_description", 
+          "description": "Bond description (e.g., 'T 3 15/08/52')",
+          "type": "string",
+          "dimensionality": "scalar"
+        },
+        {
+          "name": "price",
+          "description": "Bond price (default: 100.0)",
+          "type": "number",
+          "dimensionality": "scalar",
+          "optional": true
+        }
+      ],
+      "options": {
+        "batch": false,
+        "stream": false
+      }
+    },
+    {
+      "id": "CONVEXITY",
+      "name": "CONVEXITY",
+      "namespace": "BOND",
+      "description": "Calculate bond convexity with institutional accuracy", 
+      "helpUrl": "https://github.com/urbancanary/excel-bond-bridge#convexity",
+      "result": {
+        "type": "number",
+        "dimensionality": "scalar"
+      },
+      "parameters": [
+        {
+          "name": "bond_description",
+          "description": "Bond description (e.g., 'T 3 15/08/52')",
+          "type": "string",
+          "dimensionality": "scalar"
+        },
+        {
+          "name": "price",
+          "description": "Bond price (default: 100.0)",
+          "type": "number",
+          "dimensionality": "scalar",
+          "optional": true
+        }
+      ],
+      "options": {
+        "batch": false,
+        "stream": false
+      }
+    },
+    {
+      "id": "PVBP",
+      "name": "PVBP", 
+      "namespace": "BOND",
+      "description": "Calculate Price Value of a Basis Point with institutional accuracy",
+      "helpUrl": "https://github.com/urbancanary/excel-bond-bridge#pvbp",
+      "result": {
+        "type": "number",
+        "dimensionality": "scalar"
+      },
+      "parameters": [
+        {
+          "name": "bond_description",
+          "description": "Bond description (e.g., 'T 3 15/08/52')",
+          "type": "string",
+          "dimensionality": "scalar"
+        },
+        {
+          "name": "price",
+          "description": "Bond price (default: 100.0)",
+          "type": "number",
+          "dimensionality": "scalar",
+          "optional": true
+        }
+      ],
+      "options": {
+        "batch": false,
+        "stream": false
+      }
+    },
+    {
+      "id": "ANALYZE",
+      "name": "ANALYZE",
+      "namespace": "BOND",
+      "description": "Get all bond metrics in one call - returns yield",
+      "helpUrl": "https://github.com/urbancanary/excel-bond-bridge#analyze", 
+      "result": {
+        "type": "number",
+        "dimensionality": "scalar"
+      },
+      "parameters": [
+        {
+          "name": "bond_description",
+          "description": "Bond description (e.g., 'T 3 15/08/52')",
+          "type": "string",
+          "dimensionality": "scalar"
+        },
+        {
+          "name": "price", 
+          "description": "Bond price (default: 100.0)",
+          "type": "number",
+          "dimensionality": "scalar",
+          "optional": true
+        }
+      ],
+      "options": {
+        "batch": false,
+        "stream": false
+      }
+    }
+  ]
+}

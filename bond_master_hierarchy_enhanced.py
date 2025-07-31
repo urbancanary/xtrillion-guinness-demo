@@ -280,6 +280,7 @@ def calculate_bond_master(
             'duration': result.get('duration'), 
             'spread': result.get('spread'),
             'accrued_interest': result.get('accrued_interest'),
+            'accrued_per_million': result.get('accrued_per_million'),  # 💰 NEW: Bloomberg format
             'convexity': result.get('convexity'),  # 🚀 FIXED: Include convexity
             'pvbp': result.get('pvbp'),            # 🚀 FIXED: Include PVBP
             'conventions': result.get('conventions'),

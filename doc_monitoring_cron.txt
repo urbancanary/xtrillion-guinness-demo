@@ -1,0 +1,11 @@
+# XTrillion API Documentation Monitoring
+# Add these lines to your crontab with 'crontab -e'
+
+# Daily documentation check at 9 AM (local development)
+0 9 * * * cd /path/to/your/project && python3 doc_maintenance_agent.py --check
+
+# Pre-deployment check (before business hours)
+0 8 * * 1-5 cd /path/to/your/project && python3 doc_maintenance_agent.py --check --api-base https://your-production-url.com
+
+# Weekly comprehensive check with performance measurement
+0 7 * * 1 cd /path/to/your/project && python3 doc_maintenance_agent.py --check > weekly_doc_report.txt

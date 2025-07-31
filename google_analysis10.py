@@ -257,7 +257,9 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
         # 🚀 CRITICAL FIX: Add accrued interest calculation (missing for dirty price!)
         logger.info(f"{log_prefix} Calculating accrued interest...")
         accrued_interest = bond.accruedAmount()
-        logger.info(f"{log_prefix} Accrued Interest: {accrued_interest:.6f}")
+        # 💰 NEW: Calculate accrued interest per million for Bloomberg validation
+        accrued_per_million = accrued_interest * 10000  # Convert % to $ per 1M notional
+        logger.info(f"{log_prefix} Accrued Interest: {accrued_interest:.6f}% ({accrued_per_million:.2f} per 1M)")
         
         # 🚀 ADDITIONAL METRICS: Add PVBP (Price Value of a Basis Point)
         logger.info(f"{log_prefix} Calculating PVBP...")
@@ -275,6 +277,7 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
             'duration': duration,         # ✅ FIXED: Duration in years (no artificial scaling)
             'convexity': convexity,       # ✅ FIXED: Convexity (no artificial scaling)
             'accrued_interest': accrued_interest,  # 🚀 FIXED: Now includes accrued interest!
+            'accrued_per_million': accrued_per_million,  # 💰 NEW: Accrued interest per $1M (Bloomberg format)
             'clean_price': price,         # 🚀 ADDED: Clean price from input
             'dirty_price': price + accrued_interest,  # 🚀 ADDED: Dirty price calculation
             'pvbp': pvbp,                 # 🚀 NEW: Price Value of a Basis Point

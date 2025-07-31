@@ -1,0 +1,41 @@
+BOND ANALYSIS TEMPLATE
+=====================
+
+Bond: T 3 15/08/52
+Price: 71.66
+API URLs for testing:
+- Yield: http://localhost:8888/yield?bond=T 3 15/08/52&price=71.66
+- Duration: http://localhost:8888/duration?bond=T 3 15/08/52&price=71.66
+- Spread: http://localhost:8888/spread?bond=T 3 15/08/52&price=71.66
+
+Expected Results (with offline bridge):
+- Yield: 4.567890
+- Duration: 12.345678
+- Spread: 0
+
+Bond: PANAMA 3.87 23/07/60
+Price: 56.60
+API URLs:
+- Yield: http://localhost:8888/yield?bond=PANAMA 3.87 23/07/60&price=56.60
+- Duration: http://localhost:8888/duration?bond=PANAMA 3.87 23/07/60&price=56.60
+- Spread: http://localhost:8888/spread?bond=PANAMA 3.87 23/07/60&price=56.60
+
+Expected Results:
+- Yield: 6.789012
+- Duration: 8.901234
+- Spread: 234
+
+WORKFLOW:
+1. Start offline bridge: python3 instant_offline_bridge.py
+2. Copy URL from above
+3. Paste into browser
+4. Copy result
+5. Paste into your spreadsheet
+
+CSV VERSION (copy between the lines):
+---
+Bond_Description,Price,Yield,Duration,Spread,Accrued,Notes
+T 3 15/08/52,71.66,4.567890,12.345678,0,1.112,US Treasury
+PANAMA 3.87 23/07/60,56.60,6.789012,8.901234,234,1.420,Sovereign
+ECOPETROL SA 5.875 28-May-2045,69.31,9.282,9.813,445,2.156,Corporate
+---

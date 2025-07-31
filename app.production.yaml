@@ -1,0 +1,48 @@
+# XTrillion GA10 - PRODUCTION OPTIMIZED App Engine Configuration
+# Eliminates cold starts and optimizes for real user performance
+
+runtime: python311  # Latest stable Python runtime
+
+# Optimized entrypoint for production performance
+entrypoint: gunicorn --bind :$PORT --workers 2 --threads 4 --timeout 60 --preload --max-requests 1000 --max-requests-jitter 100 google_analysis10_api:app
+
+env_variables:
+  PORT: 8080
+  ENVIRONMENT: production
+  DATABASE_SOURCE: embedded
+  DATABASE_PATH: ./bonds_data.db
+  VALIDATED_DB_PATH: ./validated_quantlib_bonds.db
+  BLOOMBERG_DB_PATH: ./bloomberg_index.db
+  PYTHONPATH: /srv
+  
+# CRITICAL: Keep warm instances to eliminate cold starts
+automatic_scaling:
+  min_instances: 1          # Always keep 1 warm instance (eliminates cold starts)
+  max_instances: 5          # Reasonable limit for bond analytics workload
+  target_cpu_utilization: 0.6
+  target_throughput_utilization: 0.8
+
+# Optimized resources for QuantLib + database operations
+resources:
+  cpu: 2                    # More CPU for QuantLib calculations
+  memory_gb: 8              # More memory for 155MB+ databases
+  disk_size_gb: 10
+
+# Request timeout optimization
+inbound_services:
+- warmup
+
+# Health check path
+readiness_check:
+  path: "/health"
+  check_interval_sec: 5
+  timeout_sec: 4
+  failure_threshold: 2
+  success_threshold: 2
+
+liveness_check:
+  path: "/health"
+  check_interval_sec: 30
+  timeout_sec: 4
+  failure_threshold: 4
+  success_threshold: 2

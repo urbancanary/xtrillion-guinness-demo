@@ -4,7 +4,8 @@ Professional-grade bond calculation engine with institutional analytics and 13 e
 
 ## 📚 **API Documentation**
 
-### **📖 [Complete API Specification](API_SPECIFICATION.md)**
+- **[API Specification - Production](API_SPECIFICATION_PRODUCTION_REALITY.md)** - Internal use, actual implementation details
+- **[API Specification - External](API_SPECIFICATION_EXTERNAL.md)** - Client-facing, branded presentation
 
 The complete API documentation including:
 - ✅ **13 Enhanced Metrics** - Yield, duration, convexity, PVBP, and more
