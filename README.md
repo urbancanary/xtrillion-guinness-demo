@@ -6,6 +6,7 @@ Professional-grade bond calculation engine with institutional analytics and 13 e
 
 - **[API Specification - Production](API_SPECIFICATION_PRODUCTION_REALITY.md)** - Internal use, actual implementation details
 - **[API Specification - External](API_SPECIFICATION_EXTERNAL.md)** - Client-facing, branded presentation
+- **[Google Sheets Functions](GOOGLE_SHEETS_FUNCTIONS.md)** - Professional xt_ functions for Google Sheets ⭐ **NEW!**
 
 The complete API documentation including:
 - ✅ **13 Enhanced Metrics** - Yield, duration, convexity, PVBP, and more
@@ -13,6 +14,7 @@ The complete API documentation including:
 - ✅ **Universal Parser** - ISIN codes and bond descriptions
 - ✅ **Live Examples** - Python, JavaScript, and curl integration
 - ✅ **Error Handling** - Complete error response documentation
+- ✅ **Google Sheets Integration** - Professional xt_ functions with settlement date support
 
 ## 🚀 **Live Production API**
 
@@ -42,6 +44,38 @@ curl -X POST "https://future-footing-414610.uc.r.appspot.com/api/v1/bond/parse-a
   },
   "status": "success"
 }
+```
+
+## 📊 **Google Sheets Integration** ⭐ **NEW!**
+
+**Production-ready Google Sheets functions with settlement date support:**
+
+### Quick Setup
+1. Open Google Sheets → Extensions → Apps Script
+2. Copy and paste the entire `xt_functions.gs` file  
+3. Save and authorize when prompted
+
+### Usage Examples
+```javascript
+// Basic bond analytics:
+=xt_ytm("T 3 15/08/52", 71.66)                    // → 4.899718
+=xt_duration("T 3 15/08/52", 71.66)               // → 16.346808
+=xt_spread("ECOPETROL SA, 5.875%, 28-May-2045", 69.31)  // → 445 bps
+
+// With settlement dates:
+=xt_ytm("T 3 15/08/52", 71.66, "2025-08-01")     // Specific date
+=xt_accrued_interest("T 3 15/08/52", 71.66, TODAY())  // Current date
+=xt_validation_status("T 3 15/08/52", 71.66, 11123.60)  // vs Bloomberg
+```
+
+### Portfolio Setup
+| A | B | C | D | E |
+|---|---|---|---|---|
+| **Bond** | **Price** | **Yield** | **Duration** | **Spread** |
+| T 3 15/08/52 | 71.66 | `=xt_ytm(A2,B2)` | `=xt_duration(A2,B2)` | `=xt_spread(A2,B2)` |
+| PANAMA, 3.87%, 23-Jul-2060 | 56.60 | `=xt_ytm(A3,B3)` | `=xt_duration(A3,B3)` | `=xt_spread(A3,B3)` |
+
+**See [GOOGLE_SHEETS_FUNCTIONS.md](GOOGLE_SHEETS_FUNCTIONS.md) for complete documentation.**
 ```
 
 ## ✨ **Enhanced Metrics (13 Total)**

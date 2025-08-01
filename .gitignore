@@ -154,3 +154,6 @@ bbg baseline.xlsx
 !deploy*.sh
 !test_enhanced_filters.py
 !implement_ga10_filters.py
+!xt_functions.gs
+!GOOGLE_SHEETS_FUNCTIONS.md
+!GOOGLE_SHEETS_IMPLEMENTATION_NOTES.md
