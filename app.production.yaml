@@ -44,15 +44,5 @@ liveness_check:
   failure_threshold: 3
   success_threshold: 2
 
-# Skip files that could cause issues
-skip_files:
-- ^(.*/)?#.*#$
-- ^(.*/)?.*~$
-- ^(.*/)?.*\.py[co]$
-- ^(.*/)?.*/RCS/.*$
-- ^(.*/)?\..*$
-- ^(.*/)?.*\.bak$
-- ^(.*/)?test_.*\.py$
-- ^(.*/)?debug_.*\.py$
-- ^(.*/)?archive/.*$
-- ^(.*/)?backups_.*$
+# Note: skip_files removed for python311 runtime
+# Use .gcloudignore instead for file exclusions
