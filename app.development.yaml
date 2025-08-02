@@ -46,12 +46,5 @@ liveness_check:
   failure_threshold: 5
   success_threshold: 1
 
-# Include additional files for development
-skip_files:
-- ^(.*/)?#.*#$
-- ^(.*/)?.*~$
-- ^(.*/)?.*\.py[co]$
-- ^(.*/)?.*/RCS/.*$
-- ^(.*/)?\..*$
-- ^(.*/)?.*\.bak$
 # Note: Include test files in development
+# skip_files removed - use .gcloudignore instead
