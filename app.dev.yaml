@@ -1,0 +1,42 @@
+# Google Analysis 10 - Development Environment Configuration
+# Optimized for DEV testing with batch processing capabilities
+
+runtime: python311
+
+# Standard entrypoint for Flask app
+entrypoint: gunicorn --bind :$PORT --workers 1 --threads 2 --timeout 0 google_analysis10_api:app
+
+service: development
+
+env_variables:
+  PORT: 8080
+  ENVIRONMENT: development
+  DATABASE_SOURCE: gcs
+  PYTHONPATH: /srv
+  BATCH_PROCESSING_ENABLED: true
+
+# Conservative scaling for DEV environment
+automatic_scaling:
+  min_instances: 0
+  max_instances: 2
+  target_cpu_utilization: 0.7
+
+# Sufficient resources for QuantLib calculations
+resources:
+  cpu: 1
+  memory_gb: 4
+
+# Health check
+readiness_check:
+  path: "/health"
+  check_interval_sec: 5
+  timeout_sec: 4
+  failure_threshold: 2
+  success_threshold: 2
+
+liveness_check:
+  path: "/health"
+  check_interval_sec: 30
+  timeout_sec: 4
+  failure_threshold: 4
+  success_threshold: 2

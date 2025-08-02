@@ -246,8 +246,128 @@ def get_conventions_from_db(isin, db_path):
         logger.error(f"Database error while fetching conventions for {isin}: {e}")
     return {}
 
+def get_ticker_from_description(description):
+    """
+    Extract ticker from bond description
+    Examples:
+    - "ECOPET 5 ⅞ 05/28/45" → "ECOPET"
+    - "PEMEX 6.95 01/28/60" → "PEMEX"
+    - "ECOPETROL SA, 5.875%, 28-May-2045" → "ECOPETROL"
+    """
+    if not description:
+        return None
+        
+    # Split by spaces and get first part
+    parts = description.strip().split()
+    if parts:
+        ticker = parts[0].upper()
+        # Remove any special characters
+        ticker = ticker.replace(',', '').replace('.', '')
+        return ticker
+    return None
+
+def get_validated_conventions_by_ticker(ticker, validated_db_path):
+    """
+    Get conventions from validated_quantlib_bonds by matching ticker in description
+    This is more reliable than ticker_convention_preferences
+    """
+    if not ticker or not validated_db_path:
+        return None
+        
+    try:
+        with sqlite3.connect(validated_db_path) as conn:
+            cursor = conn.cursor()
+            
+            # Get the most common convention for this ticker
+            query = """
+            SELECT 
+                fixed_day_count,
+                fixed_business_convention,
+                fixed_frequency,
+                COUNT(*) as count
+            FROM validated_quantlib_bonds
+            WHERE description LIKE ? || '%'
+            GROUP BY fixed_day_count, fixed_business_convention, fixed_frequency
+            ORDER BY count DESC
+            LIMIT 1
+            """
+            cursor.execute(query, (ticker,))
+            result = cursor.fetchone()
+            
+            if result:
+                conventions = {
+                    'fixed_day_count': result[0],
+                    'fixed_business_convention': result[1],
+                    'fixed_frequency': result[2],
+                    'source': 'validated_ticker_lookup',
+                    'bond_count': result[3]
+                }
+                logger.info(f"✅ Found validated conventions for ticker {ticker} (used by {result[3]} bonds): {conventions}")
+                return conventions
+                
+    except Exception as e:
+        logger.error(f"Error getting validated ticker conventions: {e}")
+        
+    return None
+
+def find_isin_from_parsed_data(parsed_data, validated_db_path):
+    """
+    Find ISIN from validated database using parsed bond details.
+    This helps when parsing descriptions that don't include ISINs.
+    """
+    if not parsed_data or not validated_db_path:
+        return None
+        
+    try:
+        coupon = parsed_data.get('coupon')
+        maturity = parsed_data.get('maturity')
+        issuer = parsed_data.get('issuer', '').upper()
+        
+        if not coupon or not maturity:
+            return None
+            
+        # Connect to validated database
+        with sqlite3.connect(validated_db_path) as conn:
+            cursor = conn.cursor()
+            
+            # Try exact match on coupon and maturity
+            query = """
+            SELECT isin, description 
+            FROM validated_quantlib_bonds 
+            WHERE coupon = ? 
+            AND maturity = ?
+            """
+            
+            cursor.execute(query, (coupon, maturity))
+            results = cursor.fetchall()
+            
+            # If we have results, try to match by issuer
+            for isin, description in results:
+                desc_upper = description.upper()
+                # Check if issuer matches
+                if 'ECOPETROL' in issuer and 'ECOPET' in desc_upper:
+                    logger.info(f"✅ Found ISIN {isin} for ECOPETROL bond via validated DB lookup")
+                    return isin
+                elif 'PEMEX' in issuer and ('PEMEX' in desc_upper or 'PETROLEOS' in desc_upper):
+                    logger.info(f"✅ Found ISIN {isin} for PEMEX bond via validated DB lookup")
+                    return isin
+                elif issuer[:6] in desc_upper:  # Match first 6 chars of issuer
+                    logger.info(f"✅ Found ISIN {isin} for {issuer} bond via validated DB lookup")
+                    return isin
+                
+            # If no issuer match but only one result, use it
+            if len(results) == 1:
+                isin = results[0][0]
+                logger.info(f"✅ Found unique ISIN {isin} via coupon/maturity match")
+                return isin
+                
+    except Exception as e:
+        logger.error(f"Error finding ISIN from parsed data: {e}")
+        
+    return None
+
 # --- Core Calculation Engine ---
-def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, maturity_date, price, trade_date, treasury_handle, default_conventions, is_treasury=False, settlement_days=0, validated_db_path=None, description=None, db_path=None):
+def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, maturity_date, price, trade_date, treasury_handle, default_conventions, is_treasury=False, settlement_days=0, validated_db_path=None, description=None, db_path=None, use_settlement_date_directly=True):
     log_prefix = f"[CALC_ENGINE ISIN: {isin}, T+{settlement_days}]"
     logger.info(f"{log_prefix} Starting calculation.")
     try:
@@ -263,7 +383,17 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
 
         day_count = ql.Actual360()
         calendar = ql.UnitedStates(ql.UnitedStates.GovernmentBond)
-        settlement_date = calendar.advance(calculation_date, ql.Period(settlement_days, ql.Days))
+        
+        # FIXED: When settlement_date is explicitly provided, use it directly
+        if use_settlement_date_directly and settlement_days == 0:
+            # Settlement date was explicitly provided - use it as-is WITHOUT holiday adjustment
+            # For accrued interest, we need the actual calendar date, not business day adjusted
+            settlement_date = calculation_date
+            logger.info(f"{log_prefix} Using provided settlement date directly (no holiday adjustment): {format_ql_date(settlement_date)}")
+        else:
+            # Traditional behavior: calculate settlement date from trade date + settlement days
+            settlement_date = calendar.advance(calculation_date, ql.Period(settlement_days, ql.Days))
+            logger.info(f"{log_prefix} Calculated settlement date (T+{settlement_days}): {format_ql_date(settlement_date)}")
         
         # ✅ CORRECTED: Let QuantLib handle issue date with defaults
         # DO NOT manually set issue date - causes duration calculation errors
@@ -285,22 +415,43 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
 
         logger.info(f"{log_prefix} Creating QuantLib bond schedule...")
         
-        # ✅ SMART SCHEDULE: Include enough history for accrued interest calculation
-        # Start from a date before settlement to capture the last coupon period
-        schedule_start = ql.Date(15, 2, 2025)  # Last coupon date before settlement
+        # FIXED: Create schedule from well before settlement to capture all coupon dates
+        # Calculate a start date that's at least 10 years before settlement
+        years_back = 10
+        schedule_start = settlement_date
+        for i in range(years_back * 2):  # Semi-annual periods
+            schedule_start = calendar.advance(schedule_start, ql.Period(-6, ql.Months))
         
+        # Get business day convention from conventions
+        bus_day_conv_str = conventions.get('fixed_business_convention') or conventions.get('business_day_convention', 'Following')
+        
+        # Map string to QuantLib convention
+        if bus_day_conv_str == 'Unadjusted':
+            business_convention = ql.Unadjusted
+        elif bus_day_conv_str == 'Following':
+            business_convention = ql.Following
+        elif bus_day_conv_str == 'ModifiedFollowing':
+            business_convention = ql.ModifiedFollowing
+        elif bus_day_conv_str == 'Preceding':
+            business_convention = ql.Preceding
+        else:
+            business_convention = ql.Following  # Default
+            
+        logger.info(f"{log_prefix} Using business day convention: {bus_day_conv_str}")
+        
+        # Create schedule from calculated start to maturity
         schedule = ql.Schedule(
-            schedule_start,   # Start before settlement to capture accrual period
-            ql_maturity,      # End at maturity
+            schedule_start,
+            ql_maturity,
             ql.Period(frequency),
             calendar,
-            ql.Following,
-            ql.Following,
-            ql.DateGeneration.Backward,  # Generate backward from maturity
+            business_convention,
+            business_convention,
+            ql.DateGeneration.Backward,
             False
         )
         
-        logger.info(f"{log_prefix} Smart schedule created from {schedule_start} for proper accrued calculation")
+        logger.info(f"{log_prefix} Schedule created from {format_ql_date(schedule_start)} to {format_ql_date(ql_maturity)}")
 
         # Map day count convention from string to QuantLib object
         day_count_str = conventions.get('day_count', '30/360')
@@ -375,7 +526,35 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
         
         # 🚀 CRITICAL FIX: Add accrued interest calculation (missing for dirty price!)
         logger.info(f"{log_prefix} Calculating accrued interest...")
-        accrued_interest = bond.accruedAmount()
+        
+        # FIXED: For explicit settlement dates on holidays, calculate accrued manually
+        # to avoid QuantLib's automatic business day adjustment
+        if use_settlement_date_directly and calendar.isHoliday(settlement_date):
+            logger.info(f"{log_prefix} Settlement date is a holiday - calculating accrued manually")
+            
+            # Find the coupon period containing the settlement date
+            for i in range(len(schedule) - 1):
+                if schedule[i] <= settlement_date <= schedule[i + 1]:
+                    prev_coupon_date = schedule[i]
+                    next_coupon_date = schedule[i + 1]
+                    
+                    # Calculate accrued days using the bond's day counter
+                    accrued_days = day_counter.dayCount(prev_coupon_date, settlement_date)
+                    period_days = day_counter.dayCount(prev_coupon_date, next_coupon_date)
+                    
+                    # Calculate accrued interest
+                    coupon_payment = coupon_decimal * 100.0 / frequency  # Semi-annual payment
+                    accrued_interest = coupon_payment * (accrued_days / float(period_days))
+                    
+                    logger.info(f"{log_prefix} Manual accrued calc: {accrued_days} days / {period_days} days * {coupon_payment}% = {accrued_interest:.6f}%")
+                    break
+            else:
+                # Fallback to QuantLib calculation if period not found
+                accrued_interest = bond.accruedAmount()
+        else:
+            # Use standard QuantLib calculation for non-holiday dates
+            accrued_interest = bond.accruedAmount()
+            
         # 💰 NEW: Calculate accrued interest per million for Bloomberg validation
         accrued_per_million = accrued_interest * 10000  # Convert % to $ per 1M notional
         logger.info(f"{log_prefix} Accrued Interest: {accrued_interest:.6f}% ({accrued_per_million:.2f} per 1M)")
@@ -522,9 +701,10 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
         logger.info(f"📅 Using provided settlement date: {settlement_date_str}")
     
     # Convert to date object to prevent type mismatches with other date objects
-    trade_date = datetime.strptime(settlement_date_str, '%Y-%m-%d').date()
+    # FIXED: This is actually the settlement date, not trade date
+    settlement_date_obj = datetime.strptime(settlement_date_str, '%Y-%m-%d').date()
     treasury_yields = fetch_treasury_yields(settlement_date_str, db_path)
-    treasury_handle = ql.YieldTermStructureHandle(ql.FlatForward(ql.Date(trade_date.day, trade_date.month, trade_date.year), 0.03, ql.Actual365Fixed()))
+    treasury_handle = ql.YieldTermStructureHandle(ql.FlatForward(ql.Date(settlement_date_obj.day, settlement_date_obj.month, settlement_date_obj.year), 0.03, ql.Actual365Fixed()))
     # Initialize the WORKING Treasury detector with proper ISIN pattern matching
     detector = WorkingTreasuryDetector(db_path, validated_db_path)
     # CRITICAL FIX: The parser's primary db_path for yields MUST be the bloomberg_db_path.
@@ -569,6 +749,26 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
             logger.info(f"📋 Using fallback: {fallback_conventions}")
 
         isin = bond_data.get('isin') or parsed_data.get('isin')
+        
+        # FIXED: Enhanced lookup hierarchy
+        ticker_conventions = None
+        
+        # Step 1: If no ISIN found, try to find it from validated DB using parsed data
+        if not isin and parsed_data and validated_db_path:
+            isin = find_isin_from_parsed_data(parsed_data, validated_db_path)
+            if isin:
+                logger.info(f"📋 Found ISIN {isin} via validated DB lookup for {description}")
+        
+        # Step 2: If still no ISIN, try ticker lookup for conventions
+        # Store ticker conventions to apply after default_conventions is defined
+        if not isin and description:
+            ticker = get_ticker_from_description(description)
+            if ticker:
+                # Try validated DB first for ticker conventions
+                ticker_conventions = get_validated_conventions_by_ticker(ticker, validated_db_path)
+                if ticker_conventions:
+                    logger.info(f"📋 Found validated ticker conventions for {ticker}")
+        
         # Use the WORKING Treasury detector that has ISIN pattern matching
         is_treasury, detection_method = detector.is_treasury_bond(isin, description)
         logger.info(f"🏛️ Treasury detection: {is_treasury} via {detection_method} for ISIN {isin}")
@@ -593,6 +793,17 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
                 'end_of_month': False
             }
         
+        # Apply ticker conventions if found and no ISIN was available
+        if ticker_conventions and not isin:
+            logger.info(f"📋 Applying ticker conventions as no ISIN was found")
+            if 'fixed_business_convention' in ticker_conventions:
+                default_conventions['fixed_business_convention'] = ticker_conventions['fixed_business_convention']
+                default_conventions['business_day_convention'] = ticker_conventions['fixed_business_convention']
+            if 'fixed_day_count' in ticker_conventions:
+                default_conventions['day_count'] = ticker_conventions['fixed_day_count']
+            if 'fixed_frequency' in ticker_conventions:
+                default_conventions['fixed_frequency'] = ticker_conventions['fixed_frequency']
+        
         # Get price from various possible field names
         price = bond_data.get('price') or bond_data.get('CLOSING PRICE') or bond_data.get('closing_price')
         weighting = bond_data.get('weighting') or bond_data.get('WEIGHTING')
@@ -603,14 +814,15 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
             coupon=parsed_data.get('coupon'),
             maturity_date=datetime.strptime(parsed_data.get('maturity'), '%Y-%m-%d'),
             price=price,
-            trade_date=trade_date,
+            trade_date=settlement_date_obj,  # FIXED: Pass settlement date (was incorrectly named trade_date)
             treasury_handle=treasury_handle,
             default_conventions=default_conventions,
             is_treasury=is_treasury, # Pass the flag here
             settlement_days=settlement_days,
             validated_db_path=validated_db_path,
             description=description,  # Add description parameter
-            db_path=db_path  # Pass db_path for spread calculation
+            db_path=db_path,  # Pass db_path for spread calculation
+            use_settlement_date_directly=True  # FIXED: Tell function to use settlement date as-is
         )
         
         # ✅ FIXED: Add input fields to metrics for proper response formatting
@@ -623,13 +835,13 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
         results.append(metrics)
     return results
 
-def build_treasury_curve_from_yields(treasury_yields, trade_date):
+def build_treasury_curve_from_yields(treasury_yields, settlement_date):
     """
     🎯 Build QuantLib YieldTermStructure from treasury yield data
     
     Args:
         treasury_yields: Dict with tenor keys ('1Y', '2Y', etc.) and yield values
-        trade_date: Python date object or QuantLib Date object
+        settlement_date: Python date object or QuantLib Date object
         
     Returns:
         QuantLib YieldTermStructureHandle for z-spread calculation
@@ -638,16 +850,16 @@ def build_treasury_curve_from_yields(treasury_yields, trade_date):
         logger.info(f"📈 Building treasury curve from {len(treasury_yields)} yields")
         
         # Convert Python date to QuantLib Date if needed
-        if hasattr(trade_date, 'year') and not hasattr(trade_date, 'dayOfMonth'):
+        if hasattr(settlement_date, 'year') and not hasattr(settlement_date, 'dayOfMonth'):
             # Python datetime.date object - convert to QuantLib Date
-            ql_trade_date = ql.Date(trade_date.day, trade_date.month, trade_date.year)
+            ql_settlement_date = ql.Date(settlement_date.day, settlement_date.month, settlement_date.year)
         else:
             # Already a QuantLib Date
-            ql_trade_date = trade_date
+            ql_settlement_date = settlement_date
         
         # Set evaluation date
-        ql.Settings.instance().evaluationDate = ql_trade_date
-        logger.info(f"📅 Set evaluation date to: {ql_trade_date}")
+        ql.Settings.instance().evaluationDate = ql_settlement_date
+        logger.info(f"📅 Set evaluation date to: {ql_settlement_date}")
         
         # Create calendar and day count
         calendar = ql.UnitedStates(ql.UnitedStates.GovernmentBond)
@@ -717,7 +929,7 @@ def build_treasury_curve_from_yields(treasury_yields, trade_date):
             
         # Build piecewise yield curve
         curve = ql.PiecewiseLogCubicDiscount(
-            ql_trade_date,
+            ql_settlement_date,
             rate_helpers,
             day_count
         )

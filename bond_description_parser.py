@@ -289,8 +289,18 @@ class SmartBondParser:
         
         🎯 BREAKTHROUGH: Now uses centralized parser - eliminates all date parsing bugs!
         """
-        # Create date string in format that our parser can understand
-        date_str = f"{month}/{day}/{year}"
+        # FIXED: Handle month names properly
+        # If month is a name (e.g., "May"), create DD-Mon-YYYY format
+        # If month is numeric, check if it's day or month based on value
+        
+        # Check if month is a name
+        if month.isalpha():
+            # Format as DD-Mon-YYYY which the parser recognizes
+            date_str = f"{day}-{month}-{year}"
+        else:
+            # For numeric values, we need to determine if it's MM/DD or DD/MM
+            # Since this is for US bonds, assume MM/DD/YYYY format
+            date_str = f"{month}/{day}/{year}"
         
         # Use our sophisticated centralized parser
         result = parse_bond_date_simple(date_str)
@@ -359,8 +369,9 @@ class SmartBondParser:
                         # Format: "GALAXY PIPELINE, 3.25%, 30-Sep-2040" or "COMPANY, 3.25, 30-Sep-2040"
                         issuer, coupon_str, day, month_name, year = groups
                         coupon = float(coupon_str)
-                        month = self.convert_month_name_to_number(month_name)
-                        maturity = self.parse_maturity_date(month, day, year)
+                        # FIXED: Pass month name directly to parse_maturity_date
+                        # It will handle creating the proper DD-Mon-YYYY format
+                        maturity = self.parse_maturity_date(month_name, day, year)
                         
                         # Determine bond type based on issuer
                         if any(gov_keyword in issuer.upper() for gov_keyword in ['REP OF', 'STATE OF', 'REPUBLIC', 'GOVERNMENT']):
