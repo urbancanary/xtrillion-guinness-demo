@@ -55,16 +55,16 @@ function formatSettlementDate(settlement_date) {
 
 // Core API helper function with settlement date support
 function callBondAPI(bond_description, price, settlement_date) {
-  var url = API_BASE + "/api/v1/bond/analysis";
-  var payload = {
-    "description": bond_description,
-    "price": price
-  };
+  // Use flexible endpoint for easier input handling
+  var url = API_BASE + "/api/v1/bond/analysis/flexible";
+  
+  // Build array payload - endpoint auto-detects parameter types
+  var payload = [bond_description, price];
   
   // Add settlement date if provided
   var formattedDate = formatSettlementDate(settlement_date);
   if (formattedDate) {
-    payload.settlement_date = formattedDate;
+    payload.push(formattedDate);
   }
   
   var options = {

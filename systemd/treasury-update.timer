@@ -1,0 +1,10 @@
+[Unit]
+Description=Update Treasury Yields Daily
+Requires=treasury-update.service
+
+[Timer]
+OnCalendar=Mon-Fri 18:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

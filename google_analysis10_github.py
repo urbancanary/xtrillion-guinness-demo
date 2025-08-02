@@ -38,8 +38,8 @@ def format_ql_date(dt_obj):
 def get_db_path(db_name):
     return os.path.join(os.path.dirname(__file__), db_name)
 
-MAIN_DB_PATH = get_db_path('yield_curves.db')
-VALIDATED_DB_PATH = get_db_path('validated_conventions.db')
+MAIN_DB_PATH = get_db_path('bonds_data.db')  # Fixed: tsys_enhanced table is in bonds_data.db
+VALIDATED_DB_PATH = get_db_path('validated_quantlib_bonds.db')  # Fixed: correct validated db name
 
 # --- Convention Constants ---
 TREASURY_CONVENTIONS = {

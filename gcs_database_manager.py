@@ -43,6 +43,10 @@ class GCSDatabaseManager:
             "bonds_data.db",
             "validated_quantlib_bonds.db"
         ]
+        
+        # 🔧 FIX: App Engine only allows writes to /tmp/
+        self.is_app_engine = os.environ.get('GAE_APPLICATION') is not None
+        self.target_dir = '/tmp' if self.is_app_engine else '.'
     
     def _init_gcs_client(self) -> bool:
         """
@@ -79,21 +83,22 @@ class GCSDatabaseManager:
         status = {}
         
         for db_name in self.required_databases:
-            if os.path.exists(db_name):
-                size_mb = os.path.getsize(db_name) / (1024 * 1024)
+            db_path = os.path.join(self.target_dir, db_name)
+            if os.path.exists(db_path):
+                size_mb = os.path.getsize(db_path) / (1024 * 1024)
                 status[db_name] = {
                     "exists": True,
                     "size_mb": round(size_mb, 2),
-                    "path": os.path.abspath(db_name)
+                    "path": os.path.abspath(db_path)
                 }
-                logger.info(f"✅ Local database found: {db_name} ({size_mb:.1f}MB)")
+                logger.info(f"✅ Local database found: {db_path} ({size_mb:.1f}MB)")
             else:
                 status[db_name] = {
                     "exists": False,
                     "size_mb": 0,
                     "path": None
                 }
-                logger.warning(f"❌ Local database missing: {db_name}")
+                logger.warning(f"❌ Local database missing: {db_path}")
         
         return status
     
@@ -110,9 +115,10 @@ class GCSDatabaseManager:
         """
         try:
             # Check if file already exists and we're not forcing download
-            if os.path.exists(db_name) and not force_download:
-                size_mb = os.path.getsize(db_name) / (1024 * 1024)
-                logger.info(f"⏭️  {db_name} already exists locally ({size_mb:.1f}MB), skipping download")
+            db_path = os.path.join(self.target_dir, db_name)
+            if os.path.exists(db_path) and not force_download:
+                size_mb = os.path.getsize(db_path) / (1024 * 1024)
+                logger.info(f"⏭️  {db_path} already exists locally ({size_mb:.1f}MB), skipping download")
                 return True
             
             # Initialize GCS client if needed
@@ -135,20 +141,20 @@ class GCSDatabaseManager:
             blob_size_mb = blob.size / (1024 * 1024)
             
             start_time = time.time()
-            blob.download_to_filename(db_name)
+            blob.download_to_filename(db_path)
             download_time = time.time() - start_time
             
             # Verify download
-            if os.path.exists(db_name):
-                local_size_mb = os.path.getsize(db_name) / (1024 * 1024)
+            if os.path.exists(db_path):
+                local_size_mb = os.path.getsize(db_path) / (1024 * 1024)
                 speed_mbps = local_size_mb / download_time if download_time > 0 else 0
                 
-                logger.info(f"✅ Successfully downloaded {db_name}")
+                logger.info(f"✅ Successfully downloaded {db_name} to {db_path}")
                 logger.info(f"   📊 Size: {local_size_mb:.1f}MB")
                 logger.info(f"   ⏱️  Time: {download_time:.1f}s ({speed_mbps:.1f} MB/s)")
                 return True
             else:
-                logger.error(f"❌ Download failed: {db_name} not found after download")
+                logger.error(f"❌ Download failed: {db_path} not found after download")
                 return False
                 
         except exceptions.NotFound:

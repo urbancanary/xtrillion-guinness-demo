@@ -66,7 +66,21 @@ Authorization: Bearer YOUR_API_KEY
 
 Primary endpoint for calculating individual bond metrics using Universal Parser.
 
-#### Request Format:
+### 3.1a Flexible Input Analysis (NEW)
+**POST** `/api/v1/bond/analysis/flexible`
+
+Enhanced endpoint that accepts inputs in any order or as an array format.
+
+#### Flexible Array Format Examples:
+```json
+// Any order - automatically detects parameter types
+["T 3 15/08/52", 71.66, "2025-07-31"]    // Description, price, date
+[71.66, "T 3 15/08/52", "2025-07-31"]    // Price, description, date
+["2025-07-31", "T 3 15/08/52", 71.66]    // Date, description, price
+["US912810TJ79", 99.5]                    // ISIN, price
+```
+
+#### Standard Object Format (original):
 ```json
 {
   "description": "T 3 15/08/52",   // Required: Bond description (TESTED ✅)

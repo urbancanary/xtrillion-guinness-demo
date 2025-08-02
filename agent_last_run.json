@@ -1,0 +1,20 @@
+{
+  "duplication": {
+    "timestamp": "2025-08-01T11:41:49.416604",
+    "duration_seconds": 21.45,
+    "exit_code": 0,
+    "success": true
+  },
+  "orphaned": {
+    "timestamp": "2025-08-01T11:42:00.844382",
+    "duration_seconds": 1.03,
+    "exit_code": 0,
+    "success": true
+  },
+  "doc": {
+    "timestamp": "2025-08-01T11:42:15.936446",
+    "duration_seconds": 3.54,
+    "exit_code": 0,
+    "success": true
+  }
+}

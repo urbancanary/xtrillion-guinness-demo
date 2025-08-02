@@ -224,6 +224,9 @@ def calculate_bond_master(
     if isin:
         logger.info(f"📍 Route 1: ISIN Hierarchy - {isin}")
         bond_data['isin'] = isin  # ✅ FIXED: Use correct field name
+        # 🔧 FIX: Also provide ISIN as description for fallback parsing
+        if not description or description == "None":
+            bond_data['description'] = isin  # Allow ISIN to be parsed as fallback
         route_used = "isin_hierarchy"
     
     # Route 2: Parse Hierarchy (when no ISIN)  
@@ -279,6 +282,7 @@ def calculate_bond_master(
             'ytm': result.get('ytm'),  # ✅ FIXED: Use 'ytm' not 'yield'
             'duration': result.get('duration'), 
             'spread': result.get('spread'),
+            'z_spread': result.get('z_spread'),  # 🚀 FIXED: Add missing z_spread field!
             'accrued_interest': result.get('accrued_interest'),
             'accrued_per_million': result.get('accrued_per_million'),  # 💰 NEW: Bloomberg format
             'convexity': result.get('convexity'),  # 🚀 FIXED: Include convexity
@@ -355,6 +359,7 @@ def process_bonds_with_weightings(df: pd.DataFrame, db_path: str, record_number:
             'ytm': result.get('ytm'),  # ✅ FIXED: Use 'ytm' not 'yield'
             'duration': result.get('duration'),
             'spread': result.get('spread'),
+            'z_spread': result.get('z_spread'),  # ✅ ADD: Include z_spread in result
             'error': None if result.get('success') else result.get('error'),
             'route_used': result.get('route_used'),
             'success': result.get('success'),

@@ -12,6 +12,7 @@ import QuantLib as ql
 import logging
 from datetime import datetime, date, timedelta
 from bond_description_parser import SmartBondParser
+from isin_fallback_handler import get_isin_fallback_conventions
 
 def get_ql_frequency(freq_str):
     """Maps a frequency string to a QuantLib Frequency object."""
@@ -38,8 +39,34 @@ def format_ql_date(dt_obj):
 def get_db_path(db_name):
     return os.path.join(os.path.dirname(__file__), db_name)
 
-MAIN_DB_PATH = get_db_path('yield_curves.db')
-VALIDATED_DB_PATH = get_db_path('validated_conventions.db')
+# Fix for GCS deployments - check multiple locations
+def get_flexible_db_path(db_name):
+    """Get database path checking multiple locations."""
+    # 🔧 FIX: App Engine writes to /tmp/
+    is_app_engine = os.environ.get('GAE_APPLICATION') is not None
+    
+    # Check in order: /tmp/ for App Engine, current dir with ./, current dir without ./, default location, /app/
+    possible_paths = []
+    
+    if is_app_engine:
+        possible_paths.append(f'/tmp/{db_name}')
+    
+    possible_paths.extend([
+        f'./{db_name}',
+        db_name,
+        os.path.join(os.path.dirname(__file__), db_name),
+        f'/app/{db_name}'
+    ])
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+    
+    # Default to /tmp/ on App Engine, current directory otherwise
+    return f'/tmp/{db_name}' if is_app_engine else db_name
+
+MAIN_DB_PATH = get_flexible_db_path('bonds_data.db')  # Fixed: tsys_enhanced table is in bonds_data.db
+VALIDATED_DB_PATH = get_flexible_db_path('validated_quantlib_bonds.db')  # Fixed: correct validated db name
 
 # --- Convention Constants ---
 TREASURY_CONVENTIONS = {
@@ -59,6 +86,38 @@ def fetch_latest_trade_date(db_path):
 def fetch_treasury_yields(trade_date, db_path):
     """Fetches treasury yields from the 'tsys_enhanced' table with complete yield curve coverage."""
     try:
+        # 🔧 FIX: Add detailed logging
+        logger.info(f"📁 TREASURY FETCH: Attempting to fetch yields for {trade_date} from {db_path}")
+        
+        # Check if database exists
+        if not os.path.exists(db_path):
+            logger.error(f"❌ TREASURY FETCH: Database not found at {db_path}")
+            # Try alternative paths - comprehensive search
+            is_app_engine = os.environ.get('GAE_APPLICATION') is not None
+            alt_paths = []
+            
+            if is_app_engine:
+                alt_paths.append('/tmp/bonds_data.db')  # App Engine writable directory
+                
+            alt_paths.extend([
+                'bonds_data.db',  # Current directory
+                './bonds_data.db',  # Explicit current directory  
+                '/app/bonds_data.db',  # App Engine default
+                os.path.join(os.getcwd(), 'bonds_data.db'),  # Full path to current dir
+                MAIN_DB_PATH  # Use the flexible path we found at startup
+            ])
+            for alt_path in alt_paths:
+                if os.path.exists(alt_path):
+                    logger.info(f"✅ TREASURY FETCH: Found database at {alt_path}")
+                    db_path = alt_path
+                    break
+            else:
+                logger.error(f"❌ TREASURY FETCH: No database found in any location")
+                logger.error(f"   Searched: {alt_paths}")
+                logger.error(f"   CWD: {os.getcwd()}")
+                logger.error(f"   Files in CWD: {os.listdir('.')[:10]}")
+                return {}
+        
         with sqlite3.connect(db_path) as conn:
             # Use tsys_enhanced table for complete M1M through M30Y coverage
             query = f"SELECT * FROM tsys_enhanced WHERE Date = '{trade_date}'"
@@ -66,7 +125,26 @@ def fetch_treasury_yields(trade_date, db_path):
 
         if df_wide.empty:
             logger.warning(f"No treasury yields found for date: {trade_date} in 'tsys_enhanced' table.")
-            return {}
+            # 🔧 FIX: Use the most recent available date before requested date
+            fallback_query = f"""
+                SELECT * FROM tsys_enhanced 
+                WHERE Date <= '{trade_date}' 
+                ORDER BY Date DESC 
+                LIMIT 1
+            """
+            df_fallback = pd.read_sql_query(fallback_query, conn)
+            
+            if not df_fallback.empty:
+                fallback_date = df_fallback['Date'].iloc[0]
+                logger.info(f"📅 Using most recent available treasury date: {fallback_date} (requested: {trade_date})")
+                df_wide = df_fallback
+            else:
+                # If no prior dates, try to get the latest available
+                latest_query = "SELECT MAX(Date) as latest_date FROM tsys_enhanced"
+                latest_df = pd.read_sql_query(latest_query, conn)
+                latest_date = latest_df['latest_date'].iloc[0] if not latest_df.empty else None
+                logger.info(f"📅 Latest available treasury date: {latest_date}")
+                return {}
 
         # Unpivot the data from wide to long format
         yield_data_row = df_wide.iloc[0]
@@ -85,6 +163,47 @@ def fetch_treasury_yields(trade_date, db_path):
     except Exception as e:
         logger.error(f"Failed to fetch treasury yields from 'tsys_enhanced': {e}", exc_info=True)
         return {}
+
+def get_closest_treasury_yield(treasury_yields, target_years):
+    """
+    Find the closest treasury yield for a given maturity in years
+    
+    Args:
+        treasury_yields: Dict of treasury yields like {'1Y': 0.045, '2Y': 0.046, ...}
+        target_years: Target maturity in years (e.g., 8.5)
+        
+    Returns:
+        float: Treasury yield as decimal (e.g., 0.045 for 4.5%)
+    """
+    if not treasury_yields:
+        return None
+    
+    # Convert treasury tenors to years
+    tenor_years = {}
+    for tenor, yield_val in treasury_yields.items():
+        if yield_val is None:
+            continue
+            
+        try:
+            if 'M' in tenor:  # Months like '1M', '3M', '6M'
+                months = int(tenor.replace('M', ''))
+                tenor_years[months / 12.0] = yield_val
+            elif 'Y' in tenor:  # Years like '1Y', '2Y', '5Y', '10Y'
+                years = int(tenor.replace('Y', ''))
+                tenor_years[years] = yield_val
+        except:
+            continue
+    
+    if not tenor_years:
+        return None
+    
+    # Find closest maturity
+    closest_maturity = min(tenor_years.keys(), key=lambda x: abs(x - target_years))
+    closest_yield = tenor_years[closest_maturity]
+    
+    logger.debug(f"Treasury lookup: {target_years:.1f}Y bond matched to {closest_maturity:.1f}Y treasury at {closest_yield*100:.3f}%")
+    
+    return closest_yield
 
 # --- Bond Convention Handling ---
 # Import the WORKING Treasury detector that has ISIN pattern matching
@@ -128,7 +247,7 @@ def get_conventions_from_db(isin, db_path):
     return {}
 
 # --- Core Calculation Engine ---
-def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, maturity_date, price, trade_date, treasury_handle, default_conventions, is_treasury=False, settlement_days=0, validated_db_path=None):
+def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, maturity_date, price, trade_date, treasury_handle, default_conventions, is_treasury=False, settlement_days=0, validated_db_path=None, description=None, db_path=None):
     log_prefix = f"[CALC_ENGINE ISIN: {isin}, T+{settlement_days}]"
     logger.info(f"{log_prefix} Starting calculation.")
     try:
@@ -270,6 +389,84 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
         logger.info(f"{log_prefix} 🎉 FIXED CALCULATION SUCCESSFUL!")
         logger.info(f"{log_prefix} 📊 Results: Yield={bond_yield_decimal*100:.5f}%, Duration={duration:.5f}, Convexity={convexity:.2f}, Accrued={accrued_interest:.6f}")
         
+        # 🚀 SPREAD CALCULATION FIX: Calculate spread for ALL bonds (including Treasuries)
+        g_spread = None  # Default when calculation fails
+        z_spread = None  # Default
+        
+        # Calculate spread for ALL bonds (Treasuries can trade away from the fitted curve)
+        # Use provided db_path or fallback to default
+        effective_db_path = db_path or './bonds_data.db'
+        effective_validated_path = validated_db_path or './validated_quantlib_bonds.db'
+        
+        detector = WorkingTreasuryDetector(effective_db_path, effective_validated_path)
+        bond_yield_pct = bond_yield_decimal * 100  # Convert to percentage
+        
+        try:
+            # Get treasury yields for the trade date - USE PASSED DB_PATH
+            treasury_yields = fetch_treasury_yields(trade_date.strftime('%Y-%m-%d'), effective_db_path)
+            
+            if treasury_yields:
+                # Calculate years to maturity for treasury matching
+                years_to_maturity = (maturity_date - trade_date).days / 365.25
+                
+                # Find closest treasury yield
+                closest_treasury_yield = get_closest_treasury_yield(treasury_yields, years_to_maturity)
+                
+                if closest_treasury_yield:
+                    # Calculate spread in basis points
+                    treasury_yield_pct = closest_treasury_yield * 100  # Convert to percentage
+                    g_spread = (bond_yield_pct - treasury_yield_pct) * 100  # Convert to basis points
+                    
+                    # 🚀 REAL Z-SPREAD CALCULATION using QuantLib
+                    logger.info(f"{log_prefix} 🔍 Z-SPREAD: Building treasury curve for real z-spread calculation")
+                    try:
+                        # Build proper treasury curve from our treasury data
+                        treasury_curve = build_treasury_curve_from_yields(treasury_yields, trade_date)
+                        
+                        if treasury_curve:
+                            # Use QuantLib's zSpread method for institutional-grade calculation
+                            day_count = ql.Actual365Fixed()  # Standard day count for spreads
+                            compounding = ql.Semiannual     # Match bond convention
+                            frequency = ql.Semiannual      # Match bond convention
+                            
+                            # Extract YieldTermStructure from handle
+                            curve_ts = treasury_curve.currentLink()
+                            
+                            z_spread_value = ql.BondFunctions.zSpread(
+                                bond,                        # QuantLib bond object
+                                price,                       # Clean price (Real)
+                                curve_ts,                    # YieldTermStructure (not handle)
+                                day_count,                   # Day count convention
+                                compounding,                 # Compounding frequency  
+                                frequency,                   # Payment frequency
+                                settlement_date              # Settlement date
+                            )
+                            
+                            z_spread = z_spread_value * 10000  # Convert to basis points
+                            logger.info(f"{log_prefix} 🎯 REAL Z-SPREAD: {z_spread:.2f} bps (QuantLib institutional calculation)")
+                        else:
+                            logger.warning(f"{log_prefix} ❌ Could not build treasury curve for z-spread")
+                            z_spread = None
+                    except Exception as z_error:
+                        logger.error(f"{log_prefix} ❌ Z-spread calculation failed: {z_error}")
+                        z_spread = None
+                    
+                    
+                    if is_treasury:
+                        logger.info(f"{log_prefix} 💰 TREASURY SPREAD: Bond {bond_yield_pct:.3f}% - Curve {treasury_yield_pct:.3f}% = {g_spread:.0f} bps")
+                    else:
+                        logger.info(f"{log_prefix} 💰 CORPORATE SPREAD: Bond {bond_yield_pct:.3f}% - Treasury {treasury_yield_pct:.3f}% = {g_spread:.0f} bps")
+                else:
+                    logger.warning(f"{log_prefix} No matching treasury yield for {years_to_maturity:.1f}Y maturity")
+                    logger.info(f"{log_prefix} Available tenors: {list(treasury_yields.keys()) if treasury_yields else 'None'}")
+            else:
+                logger.warning(f"{log_prefix} ⚠️ No treasury yields available for {trade_date}")
+                logger.info(f"{log_prefix} DB Path checked: {effective_db_path}")
+        except Exception as spread_error:
+            logger.error(f"{log_prefix} ❌ SPREAD CALCULATION ERROR: {spread_error}", exc_info=True)
+            logger.error(f"{log_prefix} DB Path: {effective_db_path}")
+            logger.error(f"{log_prefix} Trade Date: {trade_date}")
+        
         settlement_date_str = f"{settlement_date.year()}-{settlement_date.month():02d}-{settlement_date.dayOfMonth():02d}"
         return {
             'isin': isin,
@@ -281,12 +478,15 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
             'clean_price': price,         # 🚀 ADDED: Clean price from input
             'dirty_price': price + accrued_interest,  # 🚀 ADDED: Dirty price calculation
             'pvbp': pvbp,                 # 🚀 NEW: Price Value of a Basis Point
-            'g_spread': 0, 
-            'z_spread': 0,
+            'spread': g_spread,           # 🚀 FIXED: Changed from 'g_spread' to 'spread' for API compatibility!
+            'z_spread': z_spread,         # 🚀 FIXED: Estimated Z-spread
             'conventions': conventions,
             'settlement_date_str': settlement_date_str,
             'successful': True
         }
+        
+        # 🔍 DEBUG: Log final spread values after return dict created
+        logger.info(f"{log_prefix} 🔍 RETURN DEBUG: Returned g_spread={g_spread}, z_spread={z_spread}")
     except Exception as e:
         logger.error(f"{log_prefix} Calculation failed: {e}", exc_info=True)
         return {'isin': isin, 'successful': False, 'error': str(e)}
@@ -303,6 +503,12 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
     abs_path = os.path.abspath(bloomberg_db_path)
     logger.info(f"[PATH_DEBUG] process_bond_portfolio received bloomberg_db_path: {abs_path}")
     logger.info(f"[PATH_DEBUG] Checking existence of DB file at {abs_path}: {os.path.exists(abs_path)}")
+    
+    # 🔧 FIX: Log database paths for spread calculation debugging
+    logger.info(f"📁 SPREAD DEBUG: Using databases:")
+    logger.info(f"   Primary DB: {db_path} (exists: {os.path.exists(db_path)})")
+    logger.info(f"   Validated DB: {validated_db_path} (exists: {os.path.exists(validated_db_path)})")
+    logger.info(f"   Current directory: {os.getcwd()}")
     results = []
     # ✅ FIXED: Use settlement date instead of database trade date
     if settlement_date is None:
@@ -327,10 +533,40 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
     for bond_data in bond_data_list:
         # FIELD MAPPING FIX: Handle both 'description' and 'BOND_CD' field names  
         description = bond_data.get('description') or bond_data.get('BOND_CD')
+        
+        # 🔧 FIX: Handle numeric inputs from Google Sheets
+        if isinstance(description, (int, float)):
+            description = str(description)
+            
         parsed_data = parser.parse_bond_description(description)
         if not parsed_data:
-            results.append({'description': description, 'successful': False, 'error': 'Parsing failed'})
-            continue
+            # 🔧 FIX: Enhanced hierarchy fallback when parsing fails
+            logger.warning(f"⚠️ Parsing failed for '{description}', using fallback hierarchy")
+            
+            # Check if it looks like an ISIN
+            is_isin_format = (isinstance(description, str) and 
+                            len(description) >= 10 and 
+                            len(description) <= 12 and
+                            description[:2].isalpha())
+            
+            # Get fallback conventions based on ISIN structure or defaults
+            fallback_conventions = get_isin_fallback_conventions(
+                isin=description if is_isin_format else None,
+                description=description
+            )
+            
+            # Create minimal parsed data for fallback
+            parsed_data = {
+                'issuer': 'UNKNOWN',
+                'coupon': 0.0,  # Zero coupon fallback
+                'maturity': '2030-01-01',  # Default maturity
+                'bond_type': 'corporate',
+                'parsing_failed': True,
+                'used_fallback': True,
+                'fallback_conventions': fallback_conventions
+            }
+            
+            logger.info(f"📋 Using fallback: {fallback_conventions}")
 
         isin = bond_data.get('isin') or parsed_data.get('isin')
         # Use the WORKING Treasury detector that has ISIN pattern matching
@@ -338,12 +574,24 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
         logger.info(f"🏛️ Treasury detection: {is_treasury} via {detection_method} for ISIN {isin}")
         
         # Set default conventions (can be overridden by specific bond info)
-        default_conventions = {
-            'fixed_frequency': 'Semiannual',
-            'day_count': '30/360',
-            'business_day_convention': 'Following',
-            'end_of_month': False
-        }
+        # 🔧 FIX: Use fallback conventions if parsing failed
+        if parsed_data.get('used_fallback'):
+            default_conventions = parsed_data.get('fallback_conventions', {
+                'frequency': 'Semiannual',
+                'day_count': '30/360',
+                'business_convention': 'Following',
+                'end_of_month': False
+            })
+            # Map field names
+            default_conventions['fixed_frequency'] = default_conventions.get('frequency', 'Semiannual')
+            default_conventions['business_day_convention'] = default_conventions.get('business_convention', 'Following')
+        else:
+            default_conventions = {
+                'fixed_frequency': 'Semiannual',
+                'day_count': '30/360',
+                'business_day_convention': 'Following',
+                'end_of_month': False
+            }
         
         # Get price from various possible field names
         price = bond_data.get('price') or bond_data.get('CLOSING PRICE') or bond_data.get('closing_price')
@@ -360,7 +608,9 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
             default_conventions=default_conventions,
             is_treasury=is_treasury, # Pass the flag here
             settlement_days=settlement_days,
-            validated_db_path=validated_db_path
+            validated_db_path=validated_db_path,
+            description=description,  # Add description parameter
+            db_path=db_path  # Pass db_path for spread calculation
         )
         
         # ✅ FIXED: Add input fields to metrics for proper response formatting
@@ -372,6 +622,115 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
         
         results.append(metrics)
     return results
+
+def build_treasury_curve_from_yields(treasury_yields, trade_date):
+    """
+    🎯 Build QuantLib YieldTermStructure from treasury yield data
+    
+    Args:
+        treasury_yields: Dict with tenor keys ('1Y', '2Y', etc.) and yield values
+        trade_date: Python date object or QuantLib Date object
+        
+    Returns:
+        QuantLib YieldTermStructureHandle for z-spread calculation
+    """
+    try:
+        logger.info(f"📈 Building treasury curve from {len(treasury_yields)} yields")
+        
+        # Convert Python date to QuantLib Date if needed
+        if hasattr(trade_date, 'year') and not hasattr(trade_date, 'dayOfMonth'):
+            # Python datetime.date object - convert to QuantLib Date
+            ql_trade_date = ql.Date(trade_date.day, trade_date.month, trade_date.year)
+        else:
+            # Already a QuantLib Date
+            ql_trade_date = trade_date
+        
+        # Set evaluation date
+        ql.Settings.instance().evaluationDate = ql_trade_date
+        logger.info(f"📅 Set evaluation date to: {ql_trade_date}")
+        
+        # Create calendar and day count
+        calendar = ql.UnitedStates(ql.UnitedStates.GovernmentBond)
+        day_count = ql.Actual365Fixed()
+        
+        # Create rate helpers from treasury data
+        rate_helpers = []
+        
+        # Map our tenor format to QuantLib periods
+        tenor_mapping = {
+            # Short-term format (months as numbers)
+            '1': ql.Period(1, ql.Months),
+            '2': ql.Period(2, ql.Months), 
+            '3': ql.Period(3, ql.Months),
+            '6': ql.Period(6, ql.Months),
+            # Alternative short-term format
+            '1M': ql.Period(1, ql.Months),
+            '2M': ql.Period(2, ql.Months), 
+            '3M': ql.Period(3, ql.Months),
+            '6M': ql.Period(6, ql.Months),
+            # Long-term format (standard)
+            '1Y': ql.Period(1, ql.Years),
+            '2Y': ql.Period(2, ql.Years),
+            '3Y': ql.Period(3, ql.Years),
+            '5Y': ql.Period(5, ql.Years),
+            '7Y': ql.Period(7, ql.Years),
+            '10Y': ql.Period(10, ql.Years),
+            '20Y': ql.Period(20, ql.Years),
+            '30Y': ql.Period(30, ql.Years)
+        }
+        
+        # Add rate helpers for available tenors
+        for tenor, yield_value in treasury_yields.items():
+            if tenor in tenor_mapping and yield_value is not None:
+                period = tenor_mapping[tenor]
+                
+                # Use appropriate helper based on tenor
+                if tenor in ['1M', '2M', '3M', '6M']:
+                    # Short term: Use deposit rate helper
+                    helper = ql.DepositRateHelper(
+                        ql.QuoteHandle(ql.SimpleQuote(yield_value)),
+                        period,
+                        2,  # Settlement days
+                        calendar,
+                        ql.ModifiedFollowing,
+                        False,  # End of month
+                        day_count
+                    )
+                else:
+                    # Long term: Use swap rate helper
+                    helper = ql.SwapRateHelper(
+                        ql.QuoteHandle(ql.SimpleQuote(yield_value)),
+                        period,
+                        calendar,
+                        ql.Semiannual,  # Fixed leg frequency
+                        ql.ModifiedFollowing,  # Fixed leg convention
+                        day_count,  # Fixed leg day count
+                        ql.USDLibor(ql.Period(3, ql.Months))  # Floating leg index
+                    )
+                
+                rate_helpers.append(helper)
+                logger.debug(f"   Added {tenor}: {yield_value:.4f}")
+        
+        if len(rate_helpers) < 2:
+            logger.warning(f"⚠️ Insufficient data for curve building: {len(rate_helpers)} helpers")
+            return None
+            
+        # Build piecewise yield curve
+        curve = ql.PiecewiseLogCubicDiscount(
+            ql_trade_date,
+            rate_helpers,
+            day_count
+        )
+        
+        # Return as handle
+        curve_handle = ql.YieldTermStructureHandle(curve)
+        logger.info(f"✅ Treasury curve built with {len(rate_helpers)} points")
+        return curve_handle
+        
+    except Exception as e:
+        logger.error(f"❌ Treasury curve building failed: {e}")
+        return None
+
 
 def create_treasury_curve(yield_dict, trade_date):
     """Create treasury curve from yield dictionary - RESTORED from backup"""

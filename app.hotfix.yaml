@@ -1,0 +1,59 @@
+# Google Analysis 10 - Hotfix Environment
+# This is where critical fixes are tested before production deployment
+
+runtime: python311
+
+# Hotfix service name
+service: hotfix
+
+# Production-like entrypoint for accurate testing
+entrypoint: gunicorn --bind :$PORT --workers 2 --threads 4 --timeout 60 google_analysis10_api:app
+
+env_variables:
+  PORT: 8080
+  ENVIRONMENT: hotfix
+  DATABASE_SOURCE: gcs
+  PYTHONPATH: /srv
+  VERSION: "hotfix"
+  API_VERSION: "v1-hotfix"
+  EXTERNAL_USERS: "false"
+  PRODUCTION_TESTING: "true"
+
+# Production-like scaling for testing
+automatic_scaling:
+  min_instances: 0
+  max_instances: 2
+  target_cpu_utilization: 0.6
+
+# Production-like resources
+resources:
+  cpu: 2
+  memory_gb: 8
+
+# Production-like health checks
+readiness_check:
+  path: "/health"
+  check_interval_sec: 5
+  timeout_sec: 4
+  failure_threshold: 2
+  success_threshold: 2
+
+liveness_check:
+  path: "/health"
+  check_interval_sec: 30
+  timeout_sec: 4
+  failure_threshold: 3
+  success_threshold: 2
+
+# Same file exclusions as production
+skip_files:
+- ^(.*/)?#.*#$
+- ^(.*/)?.*~$
+- ^(.*/)?.*\.py[co]$
+- ^(.*/)?.*/RCS/.*$
+- ^(.*/)?\..*$
+- ^(.*/)?.*\.bak$
+- ^(.*/)?test_.*\.py$
+- ^(.*/)?debug_.*\.py$
+- ^(.*/)?archive/.*$
+- ^(.*/)?backups_.*$
