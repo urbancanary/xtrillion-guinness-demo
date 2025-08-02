@@ -1,0 +1,10 @@
+[Unit]
+Description=Update Treasury Yields
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /Users/andyseaman/Notebooks/json_receiver_project/google_analysis10/us_treasury_yield_fetcher.py
+WorkingDirectory=/Users/andyseaman/Notebooks/json_receiver_project/google_analysis10
+StandardOutput=append:/Users/andyseaman/Notebooks/json_receiver_project/google_analysis10/logs/treasury_updates.log
+StandardError=append:/Users/andyseaman/Notebooks/json_receiver_project/google_analysis10/logs/treasury_updates.log

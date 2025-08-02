@@ -89,13 +89,16 @@ python3 test_all_25_bonds.py
 - **Core**: YTM, Modified Duration, Convexity, PVBP
 - **Annual**: Annual YTM, Annual Duration, Annual Macaulay Duration  
 - **Pricing**: Clean Price, Dirty Price, Accrued Interest, Accrued Per Million
-- **Risk**: Macaulay Duration, Z-Spread, Credit Spread
+- **Risk**: Macaulay Duration, G-Spread (spread), Z-Spread (when treasury curve available)
 
 ### Production Features
 - **Authentication**: 8 different API keys for various environments
 - **Multi-database**: Triple database lookup for maximum bond coverage
 - **Error Handling**: Comprehensive error responses with debugging info
 - **Maturity Detection**: Automatic detection and handling of matured bonds
+- **Enhanced Fallback Hierarchy**: Always returns calculations even for invalid inputs
+  - ISIN lookup → Parse as description → ISIN pattern analysis → Default conventions
+  - Weekend/holiday treasury dates automatically use most recent available data
 
 ## Input Formats
 
@@ -216,6 +219,12 @@ If Universal Parser fails, the system falls back to ISIN routing fix and SmartBo
 
 ### Database Connectivity
 Production deployment includes health checks that verify all three databases are accessible.
+
+### Known Limitations
+- **ISINs**: Direct ISIN lookup has limited coverage - use bond descriptions when possible
+- **String Prices**: Prices must be sent as numbers, not strings (e.g., 99.5 not "99.5")
+- **Z-Spread**: Only calculated when full treasury curve data is available
+- **Cash Flow Endpoints**: Not yet implemented (documented for future release)
 
 ## Quality Metrics
 

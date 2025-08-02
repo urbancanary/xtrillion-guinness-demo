@@ -1,240 +1,163 @@
 #!/usr/bin/env python3
 """
-🧪 COMPREHENSIVE 25-BOND PORTFOLIO TEST
-Tests ALL bonds from the portfolio to validate corrected compounding conventions
+Complete 25 Bond Analysis - All Results Table
+Shows every single bond with Bloomberg vs XTrillion comparison
 """
 
 import requests
 import json
-import time
-import sys
-from typing import Dict, List
+import pandas as pd
+from datetime import datetime
 
 # API Configuration
-API_BASE = "http://localhost:8082"
-SETTLEMENT_DATE = "2025-07-30"
+API_BASE = "https://future-footing-414610.uc.r.appspot.com"
+API_KEY = "gax10_demo_3j5h8m9k2p6r4t7w1q"
 
-# Complete 25-bond portfolio from the documents
-PORTFOLIO_BONDS = [
-    {"description": "T 3 15/08/52", "price": 71.66, "weight": 1.03, "expected_yield": 4.90},
-    {"description": "GALAXY PIPELINE, 3.25%, 30-Sep-2040", "price": 77.88, "weight": 3.88, "expected_yield": 5.64},
-    {"description": "ABU DHABI CRUDE, 4.6%, 02-Nov-2047", "price": 89.40, "weight": 3.78, "expected_yield": 5.72},
-    {"description": "SAUDI ARAB OIL, 4.25%, 16-Apr-2039", "price": 87.14, "weight": 3.71, "expected_yield": 5.60},
-    {"description": "EMPRESA METRO, 4.7%, 07-May-2050", "price": 80.39, "weight": 4.57, "expected_yield": 6.27},
-    {"description": "CODELCO INC, 6.15%, 24-Oct-2036", "price": 101.63, "weight": 5.79, "expected_yield": 5.95},
-    {"description": "COMISION FEDERAL, 6.264%, 15-Feb-2052", "price": 86.42, "weight": 6.27, "expected_yield": 7.44},
-    {"description": "COLOMBIA REP OF, 3.875%, 15-Feb-2061", "price": 52.71, "weight": 3.82, "expected_yield": 7.84},
-    {"description": "ECOPETROL SA, 5.875%, 28-May-2045", "price": 69.31, "weight": 2.93, "expected_yield": 9.28},
-    {"description": "EMPRESA NACIONAL, 4.5%, 14-Sep-2047", "price": 76.24, "weight": 2.73, "expected_yield": 6.54},
-    {"description": "GREENSAIF PIPELI, 6.129%, 23-Feb-2038", "price": 103.03, "weight": 2.96, "expected_yield": 5.72},
-    {"description": "STATE OF ISRAEL, 3.8%, 13-May-2060", "price": 64.50, "weight": 4.14, "expected_yield": 6.34},
-    {"description": "SAUDI INT BOND, 4.5%, 26-Oct-2046", "price": 82.42, "weight": 4.09, "expected_yield": 5.97},
-    {"description": "KAZMUNAYGAS NAT, 6.375%, 24-Oct-2048", "price": 92.21, "weight": 6.58, "expected_yield": 7.06},
-    {"description": "UNITED MEXICAN, 5.75%, 12-Oct-2110", "price": 78.00, "weight": 1.69, "expected_yield": 7.37},
-    {"description": "MEXICO CITY ARPT, 5.5%, 31-Jul-2047", "price": 82.57, "weight": 3.89, "expected_yield": 7.07},
-    {"description": "PANAMA, 3.87%, 23-Jul-2060", "price": 56.60, "weight": 4.12, "expected_yield": 7.36},
-    {"description": "PETROLEOS MEXICA, 6.95%, 28-Jan-2060", "price": 71.42, "weight": 3.95, "expected_yield": 9.88},
-    {"description": "PETROLEOS MEXICA, 5.95%, 28-Jan-2031", "price": 89.55, "weight": 1.30, "expected_yield": 8.32},
-    {"description": "GACI FIRST INVST, 5.125%, 14-Feb-2053", "price": 85.54, "weight": 2.78, "expected_yield": 6.23},
-    {"description": "QATAR STATE OF, 4.817%, 14-Mar-2049", "price": 89.97, "weight": 4.50, "expected_yield": 5.58},
-    {"description": "QNB FINANCE LTD, 1.625%, 22-Sep-2025", "price": 99.23, "weight": 4.90, "expected_yield": 5.02},
-    {"description": "QATAR ENERGY, 3.125%, 12-Jul-2041", "price": 73.79, "weight": 3.70, "expected_yield": 5.63},
-    {"description": "SAUDI ELEC GLOBA, 5.06%, 08-Apr-2043", "price": 93.29, "weight": 3.32, "expected_yield": 5.66},
-    {"description": "SITIOS, 5.375%, 04-Apr-2032", "price": 97.26, "weight": 3.12, "expected_yield": 5.87}
-]
-
-def test_single_bond(bond_data: Dict, bond_number: int) -> Dict:
-    """Test a single bond and return results"""
-    print(f"\n🧪 Testing Bond {bond_number:2d}: {bond_data['description'][:50]}...")
-    
-    # Prepare API request
-    payload = {
-        "description": bond_data["description"],
-        "price": bond_data["price"],
-        "settlement_date": SETTLEMENT_DATE
-    }
-    
+def call_xtrillion_api(description, price):
+    """Call XTrillion API for bond analysis"""
     try:
-        # Make API call
-        response = requests.post(
-            f"{API_BASE}/api/v1/bond/parse-and-calculate",
-            json=payload,
-            headers={"Content-Type": "application/json"},
-            timeout=10
-        )
+        url = f"{API_BASE}/api/v1/bond/analysis"
+        payload = {
+            "description": description,
+            "price": price
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "X-API-Key": API_KEY
+        }
         
+        response = requests.post(url, json=payload, headers=headers, timeout=15)
         if response.status_code == 200:
-            result = response.json()
+            return response.json()
+        else:
+            return {"status": "error", "error": f"HTTP {response.status_code}"}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+def get_all_25_bonds():
+    """All 25 bonds with Bloomberg baseline data"""
+    bonds = [
+        {"bond": "T 3 15/08/52", "price": 71.66, "bbg_ytm": 4.898453, "bbg_duration": 16.357839, "bbg_accrued_pm": 11123.596},
+        {"bond": "GALAXY PIPELINE, 3.25%, 30-Sep-2040", "price": 77.88, "bbg_ytm": 5.301905, "bbg_duration": 12.798703, "bbg_accrued_pm": 1644.444},
+        {"bond": "ABU DHABI CRUDE, 4.6%, 02-Nov-2047", "price": 89.40, "bbg_ytm": 5.533445, "bbg_duration": 15.610947, "bbg_accrued_pm": 12400.000},
+        {"bond": "SAUDI ARAB OIL, 4.25%, 16-Apr-2039", "price": 87.14, "bbg_ytm": 5.453088, "bbg_duration": 11.697249, "bbg_accrued_pm": 10688.889},
+        {"bond": "EMPRESA METRO, 4.7%, 07-May-2050", "price": 80.39, "bbg_ytm": 6.623874, "bbg_duration": 13.397756, "bbg_accrued_pm": 2466.667},
+        {"bond": "CODELCO INC, 6.15%, 24-Oct-2036", "price": 101.63, "bbg_ytm": 5.976502, "bbg_duration": 8.889844, "bbg_accrued_pm": 16925.000},
+        {"bond": "COMISION FEDERAL, 6.264%, 15-Feb-2052", "price": 86.42, "bbg_ytm": 7.552098, "bbg_duration": 11.650063, "bbg_accrued_pm": 8554.667},
+        {"bond": "COLOMBIA REP OF, 3.875%, 15-Feb-2061", "price": 52.71, "bbg_ytm": 8.026804, "bbg_duration": 11.464089, "bbg_accrued_pm": 6660.556},
+        {"bond": "ECOPETROL SA, 5.875%, 28-May-2045", "price": 69.31, "bbg_ytm": 9.282266, "bbg_duration": 9.812703, "bbg_accrued_pm": 19122.222},
+        {"bond": "EMPRESA NACIONAL, 4.5%, 14-Sep-2047", "price": 76.24, "bbg_ytm": 6.652468, "bbg_duration": 13.863827, "bbg_accrued_pm": 13650.000},
+        {"bond": "GREENSAIF PIPELI, 6.129%, 23-Feb-2038", "price": 103.03, "bbg_ytm": 5.766688, "bbg_duration": 9.488553, "bbg_accrued_pm": 18516.194},
+        {"bond": "STATE OF ISRAEL, 3.8%, 13-May-2060", "price": 64.50, "bbg_ytm": 6.530154, "bbg_duration": 14.230769, "bbg_accrued_pm": 2800.000},
+        {"bond": "SAUDI INT BOND, 4.5%, 26-Oct-2046", "price": 82.42, "bbg_ytm": 6.024052, "bbg_duration": 14.181278, "bbg_accrued_pm": 13725.000},
+        {"bond": "KAZMUNAYGAS NAT, 6.375%, 24-Oct-2048", "price": 92.21, "bbg_ytm": 7.248117, "bbg_duration": 12.219556, "bbg_accrued_pm": 18618.750},
+        {"bond": "UNITED MEXICAN, 5.75%, 12-Oct-2110", "price": 78.00, "bbg_ytm": 7.474806, "bbg_duration": 12.968655, "bbg_accrued_pm": 16437.500},
+        {"bond": "MEXICO CITY ARPT, 5.5%, 31-Jul-2047", "price": 82.57, "bbg_ytm": 7.153206, "bbg_duration": 12.710427, "bbg_accrued_pm": 15291.667},
+        {"bond": "PANAMA, 3.87%, 23-Jul-2060", "price": 56.60, "bbg_ytm": 7.362747, "bbg_duration": 13.488582, "bbg_accrued_pm": 14204.167},
+        {"bond": "PETROLEOS MEXICA, 6.95%, 28-Jan-2060", "price": 71.42, "bbg_ytm": 10.120543, "bbg_duration": 8.952893, "bbg_accrued_pm": 20188.194},
+        {"bond": "PETROLEOS MEXICA, 5.95%, 28-Jan-2031", "price": 89.55, "bbg_ytm": 7.334503, "bbg_duration": 5.441632, "bbg_accrued_pm": 17279.167},
+        {"bond": "GACI FIRST INVST, 5.125%, 14-Feb-2053", "price": 85.54, "bbg_ytm": 6.245277, "bbg_duration": 14.098906, "bbg_accrued_pm": 8802.083},
+        {"bond": "QATAR STATE OF, 4.817%, 14-Mar-2049", "price": 89.97, "bbg_ytm": 5.556802, "bbg_duration": 15.464750, "bbg_accrued_pm": 17825.625},
+        {"bond": "QNB FINANCE LTD, 1.625%, 22-Sep-2025", "price": 99.23, "bbg_ytm": 1.924742, "bbg_duration": 0.890635, "bbg_accrued_pm": 1005.556},
+        {"bond": "QATAR ENERGY, 3.125%, 12-Jul-2041", "price": 73.79, "bbg_ytm": 5.090516, "bbg_duration": 13.498678, "bbg_accrued_pm": 377.604},
+        {"bond": "SAUDI ELEC GLOBA, 5.06%, 08-Apr-2043", "price": 93.29, "bbg_ytm": 5.675076, "bbg_duration": 13.089228, "bbg_accrued_pm": 14759.444},
+        {"bond": "SITIOS, 5.375%, 04-Apr-2032", "price": 97.26, "bbg_ytm": 5.836506, "bbg_duration": 6.326421, "bbg_accrued_pm": 13706.250}
+    ]
+    return bonds
+
+def analyze_all_bonds():
+    """Analyze all 25 bonds and compare with Bloomberg"""
+    bonds = get_all_25_bonds()
+    results = []
+    
+    print("🔍 COMPLETE 25 BOND ANALYSIS")
+    print("=" * 120)
+    print(f"{'#':<3} {'Bond':<50} {'BBG YTM':<9} {'XT YTM':<9} {'YTM Δ':<8} {'BBG Dur':<9} {'XT Dur':<9} {'Dur Δ':<8} {'Status':<12}")
+    print("=" * 120)
+    
+    for i, bond in enumerate(bonds, 1):
+        # Call XTrillion API
+        api_result = call_xtrillion_api(bond["bond"], bond["price"])
+        
+        if api_result.get("status") == "success":
+            analytics = api_result.get("analytics", {})
+            xt_ytm = analytics.get("ytm", 0)
+            xt_duration = analytics.get("duration", 0)
             
-            # Extract key metrics
-            yield_to_maturity = result.get("yield_to_maturity", 0)
-            duration = result.get("duration", 0)
-            
-            # Calculate yield difference
-            expected_yield = bond_data.get("expected_yield", 0)
-            yield_diff_bp = round((yield_to_maturity - expected_yield) * 100, 1)
+            # Calculate differences
+            ytm_diff = xt_ytm - bond["bbg_ytm"]
+            dur_diff = xt_duration - bond["bbg_duration"]
             
             # Determine status
-            if abs(yield_diff_bp) <= 5:
+            if abs(ytm_diff) < 0.01 and abs(dur_diff) < 0.1:
                 status = "✅ PERFECT"
-                status_color = "\033[92m"  # Green
-            elif abs(yield_diff_bp) <= 10:
-                status = "⚠️ CLOSE"
-                status_color = "\033[93m"  # Yellow
+            elif abs(ytm_diff) < 0.05 and abs(dur_diff) < 0.5:
+                status = "🟢 GOOD"
+            elif abs(ytm_diff) < 0.1 and abs(dur_diff) < 1.0:
+                status = "🟡 MINOR"
             else:
-                status = "❌ ERROR"
-                status_color = "\033[91m"  # Red
-            
-            print(f"   {status_color}{status}\033[0m | "
-                  f"Expected: {expected_yield:5.2f}% | "
-                  f"Got: {yield_to_maturity:5.2f}% | "
-                  f"Diff: {yield_diff_bp:+6.1f}bp | "
-                  f"Duration: {duration:5.2f}")
-            
-            return {
-                "bond_number": bond_number,
-                "description": bond_data["description"],
-                "price": bond_data["price"],
-                "weight": bond_data["weight"],
-                "expected_yield": expected_yield,
-                "actual_yield": yield_to_maturity,
-                "yield_diff_bp": yield_diff_bp,
-                "duration": duration,
-                "status": status.split()[1],  # PERFECT, CLOSE, ERROR
-                "success": True,
-                "full_response": result
-            }
-            
+                status = "🔴 ISSUE"
+                
         else:
-            print(f"   ❌ API ERROR | Status: {response.status_code}")
-            return {
-                "bond_number": bond_number,
-                "description": bond_data["description"],
-                "success": False,
-                "error": f"HTTP {response.status_code}",
-                "status": "API_ERROR"
-            }
-            
-    except Exception as e:
-        print(f"   ❌ EXCEPTION | {str(e)}")
-        return {
-            "bond_number": bond_number,
-            "description": bond_data["description"],
-            "success": False,
-            "error": str(e),
-            "status": "EXCEPTION"
-        }
+            xt_ytm = 0
+            xt_duration = 0
+            ytm_diff = 0
+            dur_diff = 0
+            status = "❌ ERROR"
+        
+        # Print row
+        bond_name = bond["bond"][:45] + "..." if len(bond["bond"]) > 45 else bond["bond"]
+        print(f"{i:<3} {bond_name:<50} {bond['bbg_ytm']:<9.3f} {xt_ytm:<9.3f} {ytm_diff:<8.3f} {bond['bbg_duration']:<9.2f} {xt_duration:<9.2f} {dur_diff:<8.2f} {status:<12}")
+        
+        # Store result
+        results.append({
+            "Bond_Num": i,
+            "Bond": bond["bond"],
+            "Price": bond["price"],
+            "BBG_YTM": bond["bbg_ytm"],
+            "XT_YTM": xt_ytm,
+            "YTM_Diff": ytm_diff,
+            "BBG_Duration": bond["bbg_duration"],
+            "XT_Duration": xt_duration,
+            "Duration_Diff": dur_diff,
+            "Status": status,
+            "API_Status": api_result.get("status", "unknown")
+        })
+    
+    print("=" * 120)
+    
+    # Summary statistics
+    successful = [r for r in results if "✅" in r["Status"] or "🟢" in r["Status"]]
+    issues = [r for r in results if "🔴" in r["Status"] or "❌" in r["Status"]]
+    
+    print(f"\n📊 SUMMARY:")
+    print(f"   Total Bonds: {len(results)}")
+    print(f"   Successful: {len(successful)} ({len(successful)/len(results)*100:.1f}%)")
+    print(f"   Issues: {len(issues)} ({len(issues)/len(results)*100:.1f}%)")
+    
+    if issues:
+        print(f"\n🔴 BONDS WITH ISSUES:")
+        for issue in issues:
+            print(f"   #{issue['Bond_Num']}: {issue['Bond'][:60]} - {issue['Status']}")
+    
+    return results
 
-def analyze_results(results: List[Dict]) -> None:
-    """Analyze and summarize test results"""
-    successful_bonds = [r for r in results if r.get("success", False)]
-    failed_bonds = [r for r in results if not r.get("success", False)]
-    
-    if not successful_bonds:
-        print("\n🚨 TOTAL FAILURE - No bonds processed successfully!")
-        return
-    
-    # Categorize successful bonds
-    perfect_bonds = [r for r in successful_bonds if r["status"] == "PERFECT"]
-    close_bonds = [r for r in successful_bonds if r["status"] == "CLOSE"]
-    error_bonds = [r for r in successful_bonds if r["status"] == "ERROR"]
-    
-    # Calculate statistics
-    yield_diffs = [abs(r["yield_diff_bp"]) for r in successful_bonds]
-    avg_error = sum(yield_diffs) / len(yield_diffs) if yield_diffs else 0
-    max_error = max(yield_diffs) if yield_diffs else 0
-    
-    # Print summary
-    print(f"\n{'='*80}")
-    print(f"🎯 COMPREHENSIVE 25-BOND TEST RESULTS")
-    print(f"{'='*80}")
-    
-    print(f"\n📊 SUCCESS SUMMARY:")
-    print(f"   ✅ Perfect Matches (≤5bp):  {len(perfect_bonds):2d} bonds")
-    print(f"   ⚠️ Close Matches (6-10bp):   {len(close_bonds):2d} bonds")
-    print(f"   ❌ Significant Errors (>10bp): {len(error_bonds):2d} bonds")
-    print(f"   🚨 Failed API Calls:         {len(failed_bonds):2d} bonds")
-    print(f"   📈 Total Processed:          {len(successful_bonds):2d}/{len(results)} bonds")
-    
-    print(f"\n📈 ACCURACY METRICS:")
-    print(f"   🎯 Average Error:    {avg_error:5.1f} bp")
-    print(f"   📊 Maximum Error:    {max_error:5.1f} bp")
-    print(f"   ✅ Success Rate:     {len(successful_bonds)/len(results)*100:5.1f}%")
-    print(f"   🏆 Accuracy Rate:    {(len(perfect_bonds)+len(close_bonds))/len(results)*100:5.1f}%")
-    
-    # Show worst performers
-    if error_bonds:
-        print(f"\n🚨 BONDS WITH SIGNIFICANT ERRORS (>10bp):")
-        error_bonds_sorted = sorted(error_bonds, key=lambda x: abs(x["yield_diff_bp"]), reverse=True)
-        for bond in error_bonds_sorted:
-            print(f"   📛 {bond['description'][:40]:40s} | "
-                  f"Error: {bond['yield_diff_bp']:+6.1f}bp | "
-                  f"Expected: {bond['expected_yield']:5.2f}% | "
-                  f"Got: {bond['actual_yield']:5.2f}%")
-    
-    # Show failures
-    if failed_bonds:
-        print(f"\n🚨 FAILED API CALLS:")
-        for bond in failed_bonds:
-            print(f"   💥 {bond['description'][:40]:40s} | Error: {bond['error']}")
-    
-    # Overall verdict
-    accuracy_rate = (len(perfect_bonds) + len(close_bonds)) / len(results) * 100
-    if accuracy_rate >= 95:
-        verdict = "🏆 EXCELLENT"
-        verdict_color = "\033[92m"
-    elif accuracy_rate >= 85:
-        verdict = "✅ GOOD"
-        verdict_color = "\033[93m"
-    elif accuracy_rate >= 70:
-        verdict = "⚠️ NEEDS WORK"
-        verdict_color = "\033[93m"
-    else:
-        verdict = "❌ POOR"
-        verdict_color = "\033[91m"
-    
-    print(f"\n🎯 OVERALL VERDICT: {verdict_color}{verdict}\033[0m")
-    print(f"   Accuracy Rate: {accuracy_rate:.1f}% (Perfect + Close matches)")
-    
-    # Export results
-    timestamp = int(time.time())
-    output_file = f"bond_test_results_{timestamp}.json"
-    with open(output_file, 'w') as f:
-        json.dump({
-            "timestamp": timestamp,
-            "summary": {
-                "total_bonds": len(results),
-                "successful_bonds": len(successful_bonds),
-                "perfect_matches": len(perfect_bonds),
-                "close_matches": len(close_bonds),
-                "significant_errors": len(error_bonds),
-                "failed_calls": len(failed_bonds),
-                "average_error_bp": avg_error,
-                "maximum_error_bp": max_error,
-                "accuracy_rate": accuracy_rate
-            },
-            "detailed_results": results
-        }, f, indent=2)
-    
-    print(f"\n💾 Detailed results saved to: {output_file}")
-
-def main():
-    """Main test execution"""
-    print(f"🚀 STARTING COMPREHENSIVE 25-BOND PORTFOLIO TEST")
-    print(f"API: {API_BASE}")
-    print(f"Settlement Date: {SETTLEMENT_DATE}")
-    print(f"Total Bonds: {len(PORTFOLIO_BONDS)}")
-    print(f"{'='*80}")
-    
-    # Test all bonds
-    results = []
-    for i, bond in enumerate(PORTFOLIO_BONDS, 1):
-        result = test_single_bond(bond, i)
-        results.append(result)
-        time.sleep(0.5)  # Small delay to avoid overwhelming API
-    
-    # Analyze results
-    analyze_results(results)
+def save_results_csv(results):
+    """Save results to CSV"""
+    df = pd.DataFrame(results)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"all_25_bonds_analysis_{timestamp}.csv"
+    df.to_csv(filename, index=False)
+    print(f"\n💾 Results saved to: {filename}")
+    return filename
 
 if __name__ == "__main__":
-    main()
+    print("🎯 COMPLETE 25 BOND ANALYSIS TABLE")
+    print("   This will show EVERY bond with Bloomberg vs XTrillion comparison")
+    print("   So you can see exactly which bonds have issues!")
+    
+    results = analyze_all_bonds()
+    save_results_csv(results)
+    
+    print("\n✅ Complete table generated!")
+    print("   Now you can see exactly which bonds are problematic!")

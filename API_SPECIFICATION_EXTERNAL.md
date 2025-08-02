@@ -177,6 +177,26 @@ curl -s "https://api.x-trillion.ai/api/v1/health" | jq '.'
 
 **Endpoint:** `POST /bond/analysis`
 
+#### 4.3a Flexible Input Analysis (NEW)
+
+**Endpoint:** `POST /bond/analysis/flexible`
+
+Accept inputs in any order - automatically detects parameter types:
+
+```bash
+# Array format - any order works
+curl -X POST "https://api.x-trillion.ai/api/v1/bond/analysis/flexible" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: gax10_demo_3j5h8m9k2p6r4t7w1q" \
+  -d '["T 3 15/08/52", 71.66, "2025-07-31"]'
+
+# Or price first
+curl -X POST "https://api.x-trillion.ai/api/v1/bond/analysis/flexible" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: gax10_demo_3j5h8m9k2p6r4t7w1q" \
+  -d '[71.66, "T 3 15/08/52", "2025-07-31"]'
+```
+
 **Standard Bond Calculation:**
 
 **Request:**

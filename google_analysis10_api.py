@@ -45,7 +45,50 @@ from bond_master_hierarchy_enhanced import calculate_bond_master
 from google_analysis10 import process_bond_portfolio
 # Import GCS database manager
 from gcs_database_manager import ensure_databases_available
+from smart_input_detector import parse_flexible_request, detect_bond_inputs
 # Note: get_prior_month_end is defined below in this file
+
+# 🔧 FIX: Database initialization handled per-request for gunicorn compatibility
+# Global flag to track if databases have been checked this instance
+_databases_checked = False
+
+def ensure_databases_ready():
+    """Ensure databases are available before processing requests."""
+    global _databases_checked, universal_parser
+    
+    if _databases_checked:
+        return True
+        
+    database_source = os.environ.get('DATABASE_SOURCE', 'gcs')
+    
+    if database_source == 'gcs':
+        logger.info("📥 GCS database source detected - fetching databases...")
+        if ensure_databases_available():
+            logger.info("✅ Databases successfully loaded from GCS")
+            _databases_checked = True
+            
+            # 🔧 FIX: Initialize Universal Parser after databases are loaded
+            if UNIVERSAL_PARSER_AVAILABLE and universal_parser is None:
+                logger.info("🎯 Initializing Universal Parser...")
+                if initialize_universal_parser():
+                    logger.info("✅ Universal Parser initialized successfully")
+                else:
+                    logger.warning("⚠️ Universal Parser initialization failed")
+            
+            return True
+        else:
+            logger.error("❌ Failed to load databases from GCS")
+            return False
+    else:
+        logger.info("📦 Using embedded databases - no GCS fetch needed")
+        _databases_checked = True
+        
+        # 🔧 FIX: Initialize Universal Parser for embedded databases too
+        if UNIVERSAL_PARSER_AVAILABLE and universal_parser is None:
+            if initialize_universal_parser():
+                logger.info("✅ Universal Parser initialized")
+        
+        return True
 
 def check_bond_maturity(result, settlement_date=None):
     """
@@ -693,15 +736,22 @@ def initialize_universal_parser():
 
 # Production configuration with triple database support (ENHANCED FOR UNIVERSAL PARSER)
 # Primary database (bonds_data.db) - comprehensive bond data with enrichment
-PRIMARY_DB_PATH = './bonds_data.db' if os.path.exists('./bonds_data.db') else '/app/bonds_data.db'
+# 🔧 FIX: App Engine writes to /tmp/ - adjust paths accordingly
+IS_APP_ENGINE = os.environ.get('GAE_APPLICATION') is not None
+DB_DIR = '/tmp' if IS_APP_ENGINE else '.'
+
+# Fix for GCS deployments - use /tmp/ on App Engine
+PRIMARY_DB_PATH = os.path.join(DB_DIR, 'bonds_data.db')
 DATABASE_PATH = os.environ.get('DATABASE_PATH', PRIMARY_DB_PATH)
 
 # Secondary database (bloomberg_index.db) - Bloomberg reference data  
-SECONDARY_DB_PATH = './bloomberg_index.db' if os.path.exists('./bloomberg_index.db') else '/app/bloomberg_index.db'
+# Fix for GCS deployments - use /tmp/ on App Engine
+SECONDARY_DB_PATH = os.path.join(DB_DIR, 'bloomberg_index.db')
 SECONDARY_DATABASE_PATH = os.environ.get('SECONDARY_DATABASE_PATH', SECONDARY_DB_PATH)
 
 # ENHANCED: Add validated conventions database path
-DEFAULT_VALIDATED_DB_PATH = './validated_quantlib_bonds.db' if os.path.exists('./validated_quantlib_bonds.db') else '/app/validated_quantlib_bonds.db'
+# Fix for GCS deployments - use /tmp/ on App Engine
+DEFAULT_VALIDATED_DB_PATH = os.path.join(DB_DIR, 'validated_quantlib_bonds.db')
 VALIDATED_DB_PATH = os.environ.get('VALIDATED_DB_PATH', DEFAULT_VALIDATED_DB_PATH)
 
 # Bloomberg database path for Universal Parser (fixing missing variable)
@@ -752,6 +802,73 @@ if os.path.exists(VALIDATED_DB_PATH):
 else:
     logger.warning(f"⚠️  Validated conventions database not found: {VALIDATED_DB_PATH}")
     logger.warning("   API will use standard bond conventions as fallback")
+
+
+# Admin endpoint for Treasury yield updates (App Engine Cron)
+@app.route('/api/v1/admin/update-treasury-yields', methods=['GET', 'POST'])
+def update_treasury_yields():
+    """Update Treasury yields - called by App Engine cron."""
+    # Verify the request is from App Engine Cron
+    if request.headers.get('X-Appengine-Cron') != 'true':
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    try:
+        # Use cloud updater for App Engine environment
+        if os.environ.get('GAE_ENV', '').startswith('standard'):
+            from cloud_treasury_updater import update_yields_for_app_engine
+            result = update_yields_for_app_engine()
+            
+            if result['status'] == 'success':
+                return jsonify(result), 200
+            else:
+                return jsonify(result), 500
+        else:
+            # Local environment - update local database
+            from us_treasury_yield_fetcher import USTreasuryYieldFetcher
+            from datetime import datetime, timedelta
+            
+            fetcher = USTreasuryYieldFetcher()
+            
+            # Get target date (previous business day if before 4 PM ET)
+            today = datetime.now()
+            if today.hour < 16:  # Simplified check
+                today -= timedelta(days=1)
+            
+            # Skip weekends
+            while today.weekday() >= 5:
+                today -= timedelta(days=1)
+            
+            # Fetch yields
+            yields = fetcher.fetch_yield_curve_data(today)
+            
+            if yields:
+                # Update database
+                success = fetcher.update_database(yields, today)
+                
+                if success:
+                    return jsonify({
+                        'status': 'success',
+                        'date': today.strftime('%Y-%m-%d'),
+                        'yields_updated': len(yields),
+                        'yields': yields
+                    }), 200
+                else:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'Failed to update database'
+                    }), 500
+            else:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'No yield data retrieved'
+                }), 500
+            
+    except Exception as e:
+        logger.error(f"Treasury update failed: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 @app.route('/health', methods=['GET'])
 @optional_api_key
@@ -836,6 +953,82 @@ def health_check():
         ]
     })
 
+@app.route('/api/v1/bond/analysis/flexible', methods=['POST'])
+@require_api_key_soft
+def bond_analyze_flexible():
+    """
+    Flexible bond analysis endpoint - accepts array or object format
+    
+    Array format (any order):
+    ["T 3 15/08/52", 71.66, "2025-07-31"]
+    [71.66, "T 3 15/08/52", "2025-07-31"]
+    ["US912810TJ79", 99.5]
+    
+    Object format:
+    {"description": "T 3 15/08/52", "price": 71.66, "settlement_date": "2025-07-31"}
+    
+    Automatically detects parameter types based on format
+    """
+    # Ensure databases are available
+    if not ensure_databases_ready():
+        return jsonify({
+            'status': 'error',
+            'error': 'Database initialization failed. Please try again.',
+            'technical_details': 'GCS database download failed'
+        }), 503
+    
+    try:
+        data = request.get_json()
+        
+        # Parse flexible input format
+        params = parse_flexible_request(data)
+        
+        # Validate we have minimum required inputs
+        bond_identifier = params.get('description') or params.get('isin')
+        if not bond_identifier:
+            return jsonify({
+                'status': 'error',
+                'error': 'No bond identifier found. Please provide a bond description or ISIN.',
+                'detected_inputs': params,
+                'examples': {
+                    'array_format': ["T 3 15/08/52", 71.66, "2025-07-31"],
+                    'object_format': {"description": "T 3 15/08/52", "price": 71.66}
+                }
+            }), 400
+        
+        # Build standard request format
+        standard_request = {
+            'description': bond_identifier,
+            'price': params.get('price', 100.0),
+            'settlement_date': params.get('settlement_date'),
+            'context': request.args.get('context')  # Allow context via query param
+        }
+        
+        # If we have both description and ISIN, include ISIN separately
+        if params.get('description') and params.get('isin'):
+            standard_request['isin'] = params['isin']
+        
+        # Call bond_analysis logic directly with processed data
+        # Store original request data and replace with standard format
+        original_get_json = request.get_json
+        request.get_json = lambda: standard_request
+        
+        try:
+            # Call the bond_analysis function
+            response = bond_analysis()
+            return response
+        finally:
+            # Restore original method
+            request.get_json = original_get_json
+            
+    except Exception as e:
+        logger.error(f"Flexible bond analysis error: {e}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'message': 'Invalid request format'
+        }), 400
+
 @app.route('/api/v1/bond/analysis', methods=['POST'])
 @require_api_key_soft
 def bond_analysis():
@@ -866,11 +1059,23 @@ def bond_analysis():
     - "technical": Enhanced response with debugging and parsing details
     - Default (no context): Standard comprehensive response
     """
+    # 🔧 FIX: Ensure databases are available before processing
+    if not ensure_databases_ready():
+        return jsonify({
+            'status': 'error',
+            'error': 'Database initialization failed. Please try again.',
+            'technical_details': 'GCS database download failed'
+        }), 503
+        
     try:
         data = request.get_json()
         
         # UNIVERSAL PARSER INTEGRATION: Accept multiple input field names
         bond_input = data.get('description') or data.get('bond_input') or data.get('isin')
+        
+        # 🔧 FIX: Handle numeric inputs from Google Sheets
+        if isinstance(bond_input, (int, float)):
+            bond_input = str(bond_input)
         
         if not data or not bond_input:
             return jsonify({
@@ -901,57 +1106,178 @@ def bond_analysis():
                 'status': 'error'
             }), 400
         
-        # UNIVERSAL PARSER ENHANCEMENT: Try Universal Parser first, fallback to original logic
+        # ENHANCED ISIN ROUTER: Proper ISIN vs Description handling
+        from isin_router_fix import fix_isin_routing, validate_inputs, get_routing_strategy
+        
+        # Step 1: Route the inputs properly
+        parsed_isin, parsed_description = fix_isin_routing(bond_input, data.get('isin'))
+        logger.info(f"🔧 ISIN Router - ISIN: {parsed_isin}, Description: {parsed_description}")
+        
+        # Step 2: Validate we have sufficient information
+        is_valid, error_message = validate_inputs(parsed_isin, parsed_description)
+        if not is_valid:
+            return jsonify({
+                'status': 'error',
+                'error': error_message,
+                'received_input': bond_input,
+                'suggestion': 'Please provide either a valid ISIN with fallback description, or a bond description like "T 3 15/08/52"',
+                'examples': {
+                    'isin_with_fallback': {
+                        'isin': 'US912810TJ79',
+                        'description': 'US TREASURY N/B, 3%, 15-Aug-2052',
+                        'price': 71.66
+                    },
+                    'description_only': {
+                        'description': 'T 3 15/08/52',
+                        'price': 71.66
+                    }
+                }
+            }), 400
+        
+        # Step 3: Determine routing strategy
+        routing_strategy = get_routing_strategy(parsed_isin, parsed_description)
+        logger.info(f"📍 Routing Strategy: {routing_strategy}")
+        
+        # 🔧 FIX: Always use Universal Parser for ALL inputs (ISIN or description)
         if universal_parser and UNIVERSAL_PARSER_AVAILABLE:
-            logger.info(f"🚀 Using Universal Parser for: {bond_input}")
+            logger.info(f"🚀 Using Universal Parser for input: {bond_input}")
             
-            # Parse using Universal Parser
+            # Parse using Universal Parser with the ORIGINAL input (handles both ISIN and description)
             bond_spec = universal_parser.parse_bond(
                 input_data=bond_input,
                 clean_price=data.get('price', 100.0),
                 settlement_date=data.get('settlement_date')
             )
             
-            if not bond_spec.parsing_success:
-                logger.warning(f"Universal Parser failed for {bond_input}: {bond_spec.error_message}")
-                # FIXED: Proper ISIN routing fallback
-                from isin_router_fix import fix_isin_routing
-                parsed_isin, parsed_description = fix_isin_routing(bond_input, data.get('isin'))
-                logger.info(f"🔧 ISIN Router Fix applied - ISIN: {parsed_isin}, Description: {parsed_description}")
+            if bond_spec.parsing_success:
+                logger.info(f"✅ Universal Parser successful: {bond_spec.parser_used}")
+                # Override routing with Universal Parser results
+                if bond_spec.isin:
+                    parsed_isin = bond_spec.isin
+                if bond_spec.description:
+                    parsed_description = bond_spec.description
+                    
+                # For ISIN inputs, Universal Parser provides the description
+                if bond_spec.input_type == "ISIN" and bond_spec.description:
+                    logger.info(f"📝 Universal Parser resolved ISIN to: {bond_spec.description}")
+                    routing_strategy = "universal_parser_resolved"
             else:
-                logger.info(f"✅ Universal Parser successful: {bond_spec.parser_used} for {bond_input}")
-                
-                # INTEGRATION FIX: Use Universal Parser results!
-                parsed_description = bond_spec.description or bond_input  # Use parsed description or fallback
-                parsed_isin = bond_spec.isin or data.get('isin')  # Use parsed ISIN or fallback
-                logger.info(f"🔧 Using parsed data - Description: {parsed_description}, ISIN: {parsed_isin}")
-        else:
-            # Fallback when Universal Parser not available
-            from isin_router_fix import fix_isin_routing
-            parsed_isin, parsed_description = fix_isin_routing(bond_input, data.get('isin'))
-            logger.info(f"🔧 Fallback ISIN Router applied - ISIN: {parsed_isin}, Description: {parsed_description}")
+                logger.warning(f"Universal Parser failed: {bond_spec.error_message}")
+                # Continue with our originally routed inputs
         
         # XTRILLION CORE CALCULATION ENGINE - Direct integration
         logger.info(f"🚀 Using XTrillion Core calculation engine: calculate_bond_master")
 
-        # Call the master calculation function directly with PARSED DATA
-        result = calculate_bond_master(
-            isin=parsed_isin,
-            description=parsed_description,
-            price=data.get('price', 100.0),
-            settlement_date=data.get('settlement_date'),
-            db_path=DATABASE_PATH,
-            validated_db_path=VALIDATED_DB_PATH,
-            bloomberg_db_path=BLOOMBERG_DB_PATH
-        )
+        # ENHANCED ERROR HANDLING: Try ISIN first, fallback to description if needed
+        try:
+            # Call the master calculation function directly with PARSED DATA
+            result = calculate_bond_master(
+                isin=parsed_isin,
+                description=parsed_description,
+                price=data.get('price', 100.0),
+                settlement_date=data.get('settlement_date'),
+                db_path=DATABASE_PATH,
+                validated_db_path=VALIDATED_DB_PATH,
+                bloomberg_db_path=BLOOMBERG_DB_PATH
+            )
 
-        if not result.get('success'):
+            # Handle ISIN lookup failure with intelligent fallback
+            if not result.get('success'):
+                error_msg = result.get('error', 'Unknown calculation error')
+                logger.warning(f"🔍 Calculation failed with routing {routing_strategy}: {error_msg}")
+                
+                # If ISIN-primary failed and we don't have a description fallback
+                if routing_strategy == "isin_primary" and not parsed_description:
+                    # 🔧 FIX: Try using ISIN as description for fallback
+                    logger.info(f"🔄 ISIN lookup failed, attempting to use ISIN as description: {parsed_isin}")
+                    
+                    fallback_result = calculate_bond_master(
+                        isin=None,  # Don't use ISIN field
+                        description=parsed_isin,  # Try ISIN as description
+                        price=data.get('price', 100.0),
+                        settlement_date=data.get('settlement_date'),
+                        db_path=DATABASE_PATH,
+                        validated_db_path=VALIDATED_DB_PATH,
+                        bloomberg_db_path=BLOOMBERG_DB_PATH
+                    )
+                    
+                    if fallback_result.get('success'):
+                        logger.info(f"✅ Fallback successful using ISIN as description")
+                        result = fallback_result
+                    else:
+                        return jsonify({
+                            'status': 'error',
+                            'error': f"ISIN not found in database and cannot be parsed: {parsed_isin}",
+                            'isin_provided': parsed_isin,
+                            'route_attempted': 'isin_database_lookup_with_parse_fallback',
+                            'suggestion': 'Please provide a valid bond description',
+                            'solution': {
+                                'method': 'Use bond description format',
+                                'example': {
+                                    'description': 'T 3 15/08/52',
+                                    'price': data.get('price', 100.0)
+                                }
+                            },
+                            'universal_parser_available': UNIVERSAL_PARSER_AVAILABLE
+                        }), 400
+                
+                # If ISIN-with-fallback failed, try description-only
+                elif routing_strategy == "isin_with_fallback" and parsed_description:
+                    logger.info(f"🔄 ISIN lookup failed, attempting description fallback: {parsed_description}")
+                    
+                    # Retry with description only
+                    fallback_result = calculate_bond_master(
+                        isin=None,  # Don't use ISIN for fallback
+                        description=parsed_description,
+                        price=data.get('price', 100.0),
+                        settlement_date=data.get('settlement_date'),
+                        db_path=DATABASE_PATH,
+                        validated_db_path=VALIDATED_DB_PATH,
+                        bloomberg_db_path=BLOOMBERG_DB_PATH
+                    )
+                    
+                    if fallback_result.get('success'):
+                        logger.info(f"✅ Fallback successful via description parsing")
+                        result = fallback_result
+                        # Add metadata about the fallback
+                        result['route_used'] = 'isin_hierarchy_with_description_fallback'
+                        result['isin_lookup_failed'] = True
+                        result['original_isin'] = parsed_isin
+                    else:
+                        return jsonify({
+                            'status': 'error',
+                            'error': f"Both ISIN lookup and description parsing failed",
+                            'isin_error': error_msg,
+                            'description_error': fallback_result.get('error'),
+                            'isin_provided': parsed_isin,
+                            'description_provided': parsed_description,
+                            'universal_parser_available': UNIVERSAL_PARSER_AVAILABLE
+                        }), 400
+                else:
+                    # General calculation failure
+                    return jsonify({
+                        'status': 'error',
+                        'error': f"Calculation failed: {error_msg}",
+                        'route_used': routing_strategy,
+                        'inputs': {
+                            'isin': parsed_isin,
+                            'description': parsed_description,
+                            'original_input': bond_input
+                        },
+                        'universal_parser_available': UNIVERSAL_PARSER_AVAILABLE
+                    }), 400
+                    
+        except Exception as e:
+            logger.error(f"🚨 Unexpected error in bond calculation: {e}")
             return jsonify({
                 'status': 'error',
-                'error': f"Calculation failed: {result.get('error')}",
-                'description': bond_input,
-                'universal_parser_available': UNIVERSAL_PARSER_AVAILABLE
-            }), 400
+                'error': f"Unexpected calculation error: {str(e)}",
+                'route_attempted': routing_strategy,
+                'inputs': {
+                    'isin': parsed_isin,
+                    'description': parsed_description
+                }
+            }), 500
         
         # 🚨 CRITICAL CHECK: Detect if bond has matured
         maturity_info = check_bond_maturity(result, data.get('settlement_date'))
@@ -964,6 +1290,12 @@ def bond_analysis():
         
         # CONSISTENT FIELD NAMES: Same data, different detail levels
         # Base analytics with FULL PRECISION + CONSISTENT YTM NAMING
+        
+        # 🔍 DEBUG: Log raw result spread values
+        logger.info(f"🔍 SPREAD DEBUG: Raw result.get('spread') = {result.get('spread')}")
+        logger.info(f"🔍 SPREAD DEBUG: Raw result.get('z_spread') = {result.get('z_spread')}")
+        logger.info(f"🔍 SPREAD DEBUG: Result keys = {list(result.keys()) if isinstance(result, dict) else 'Not dict'}")
+        
         raw_analytics = {
             # Core bond metrics - CONSISTENT YTM CONVENTION NAMING
             'ytm': result.get('ytm', 0),  # ✅ FIXED: Use 'ytm' field (already in percentage)
@@ -982,8 +1314,12 @@ def bond_analysis():
             'annual_macaulay_duration': result.get('mac_dur_annual', 0),
             'convexity': result.get('convexity', 0),  # Fixed: use 'convexity' not 'convexity_semi'
             'pvbp': result.get('pvbp', 0),  # Critical for large trades - full precision
-            'z_spread': result.get('z_spread_semi')
+            'z_spread': result.get('z_spread')
         }
+        
+        # 🔍 DEBUG: Log analytics spread values after building
+        logger.info(f"🔍 ANALYTICS DEBUG: raw_analytics['spread'] = {raw_analytics.get('spread')}")
+        logger.info(f"🔍 ANALYTICS DEBUG: raw_analytics['z_spread'] = {raw_analytics.get('z_spread')}")
         
         # 🚨 CRITICAL FIX: Correct dirty price calculation
         # Known issue: QuantLib sometimes returns dirty_price = clean_price incorrectly
@@ -1000,6 +1336,10 @@ def bond_analysis():
             logger.info(f"✅ Dirty price corrected: {calculated_dirty_price:.6f} = {clean_price:.6f} + {accrued_interest:.6f}")
         
         analytics = raw_analytics
+        
+        # 🔍 DEBUG: Log final analytics spread values
+        logger.info(f"🔍 FINAL DEBUG: Final analytics['spread'] = {analytics.get('spread')}")
+        logger.info(f"🔍 FINAL DEBUG: Final analytics['z_spread'] = {analytics.get('z_spread')}")
         
         # Common bond info
         bond_info = {
@@ -1080,6 +1420,14 @@ def portfolio_analysis():
     Query Parameters:
     - settlement_days: Settlement days override (default: 0)
     """
+    # 🔧 FIX: Ensure databases are available before processing
+    if not ensure_databases_ready():
+        return jsonify({
+            'status': 'error',
+            'error': 'Database initialization failed. Please try again.',
+            'technical_details': 'GCS database download failed'
+        }), 503
+        
     try:
         # Get JSON data
         data = request.get_json()
@@ -1194,7 +1542,7 @@ def portfolio_analysis():
                 # Safe calculation with strict None checking
                 portfolio_yield = sum(float(b['ytm'] or 0) * float(b['weighting']) for b in successful_bonds) / total_weight
                 portfolio_duration = sum(float(b['duration'] or 0) * float(b['weighting']) for b in successful_bonds) / total_weight
-                portfolio_spread = sum(float(b.get('g_spread') or 0) * float(b['weighting']) for b in successful_bonds) / total_weight
+                portfolio_spread = sum(float(b.get('spread') or 0) * float(b['weighting']) for b in successful_bonds) / total_weight
                 
                 portfolio_metrics = {
                     'portfolio_yield': float(portfolio_yield),
@@ -1533,41 +1881,15 @@ if __name__ == '__main__':
     logger.info(f"📊 Response Format: Rich self-documenting with complete metadata")
     logger.info(f"📈 Ready for partnership demonstrations with enhanced parsing reliability")
     
-    # 🔧 PRODUCTION_OPTIMIZED: Skip GCS download when databases embedded
-    database_source = os.environ.get('DATABASE_SOURCE', 'gcs')
-    
-    if database_source == 'embedded':
-        logger.info("✅ Using embedded databases (no GCS download needed)")
-        # Verify embedded databases exist
-        if os.path.exists(DATABASE_PATH) and os.path.exists(VALIDATED_DB_PATH):
-            logger.info(f"✅ Embedded databases verified: {os.path.getsize(DATABASE_PATH)/(1024*1024):.1f}MB primary")
-        else:
-            logger.error("❌ Embedded databases missing - check Dockerfile.production")
-            sys.exit(1)
+    # 🔧 FIX: Database initialization moved to module import time for gunicorn compatibility
+    # Verify databases are available (should have been loaded at import time)
+    if os.path.exists(DATABASE_PATH) and os.path.exists(VALIDATED_DB_PATH):
+        logger.info(f"✅ Databases verified: {os.path.getsize(DATABASE_PATH)/(1024*1024):.1f}MB primary")
     else:
-        logger.info("🔍 Ensuring bond databases are available from GCS...")
-        if ensure_databases_available():
-            logger.info("✅ All required databases successfully fetched from GCS")
-            
-            # Post-GCS download verification and parser initialization
-            if os.path.exists(DATABASE_PATH):
-                logger.info(f"✅ Database verified after GCS download: {os.path.getsize(DATABASE_PATH)/(1024*1024):.1f}MB")
-                
-                # Initialize Universal Parser after successful GCS download
-                if not globals().get('parser_initialized', False):
-                    parser_initialized = initialize_universal_parser()
-                    if parser_initialized:
-                        logger.info("🎯 Universal Parser initialized after GCS download")
-                    else:
-                        logger.warning("⚠️ Universal Parser initialization failed after GCS download")
-                        
-            else:
-                logger.error("❌ Database still missing after GCS download - critical error")
-                sys.exit(1)
-        else:
-            logger.error("❌ Failed to fetch databases from GCS - API may not function properly")
-            logger.error("💡 Check GCS bucket access and database availability")
-            sys.exit(1)
+        logger.error("❌ Databases not found - check module initialization")
+        logger.error(f"   DATABASE_PATH: {DATABASE_PATH} (exists: {os.path.exists(DATABASE_PATH)})")
+        logger.error(f"   VALIDATED_DB_PATH: {VALIDATED_DB_PATH} (exists: {os.path.exists(VALIDATED_DB_PATH)})")
+        sys.exit(1)
     
     if UNIVERSAL_PARSER_AVAILABLE:
         logger.info(f"✅ Parsing redundancy eliminated - single path for ALL bond inputs")

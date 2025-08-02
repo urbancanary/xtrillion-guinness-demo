@@ -1,88 +1,98 @@
 #!/usr/bin/env python3
 """
-ISIN Detection and Route Fix
-===========================
+ISIN Router Fix - Properly handles ISIN vs Description routing
+=============================================================
 
-Fix the Universal Parser integration to properly route ISINs to the 
-excellent ISIN hierarchy code in bond_master_hierarchy.py
+Fixes the issue where ISINs are incorrectly treated as descriptions
 """
 
 import re
-from typing import Tuple, Optional
+import logging
 
-def detect_isin(input_str: str) -> bool:
-    """
-    Detect if input string is an ISIN
-    
-    ISIN format: 2 letter country code + 9 alphanumeric + 1 check digit
-    Examples: US912810TJ79, XS2249741674, GB00B24CGK77
-    
-    Args:
-        input_str: Input string to check
-        
-    Returns:
-        bool: True if input looks like an ISIN
-    """
-    if not input_str or len(input_str) != 12:
+logger = logging.getLogger(__name__)
+
+def is_isin_format(identifier):
+    """Check if identifier looks like an ISIN"""
+    if not identifier or not isinstance(identifier, str):
         return False
     
-    # ISIN pattern: 2 letters + 9 alphanumeric + 1 digit
+    # Clean the identifier
+    clean_id = identifier.strip().upper()
+    
+    # Standard ISIN format: 2 letters + 9 alphanumeric + 1 check digit
     isin_pattern = r'^[A-Z]{2}[A-Z0-9]{9}[0-9]$'
-    return bool(re.match(isin_pattern, input_str.upper()))
+    
+    if re.match(isin_pattern, clean_id):
+        return True
+    
+    # Relaxed ISIN format (sometimes ISINs are not perfectly formatted)
+    # Length 10-12, starts with 2 letters, alphanumeric only
+    if (len(clean_id) >= 10 and len(clean_id) <= 12 and 
+        clean_id[:2].isalpha() and 
+        clean_id[2:].isalnum() and
+        not any(char in clean_id for char in [' ', '%', '/', '-', ','])):
+        return True
+    
+    return False
 
-def fix_isin_routing(bond_input: str, provided_isin: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
+def fix_isin_routing(bond_input, explicit_isin=None):
     """
-    Fix ISIN routing to ensure proper hierarchy routing
+    Fix ISIN vs Description routing
     
     Args:
         bond_input: The main input (could be ISIN or description)
-        provided_isin: Explicitly provided ISIN field
-        
+        explicit_isin: Explicitly provided ISIN field
+    
     Returns:
-        Tuple[isin, description]: Properly routed ISIN and description
+        tuple: (parsed_isin, parsed_description)
     """
     
-    # If explicit ISIN provided, use it
-    if provided_isin:
-        return provided_isin, bond_input if not detect_isin(bond_input) else None
+    # Case 1: Explicit ISIN provided separately
+    if explicit_isin and explicit_isin.strip():
+        logger.info(f"✅ Explicit ISIN provided: {explicit_isin}")
+        return explicit_isin.strip(), bond_input
     
-    # If bond_input is an ISIN, route it properly
-    if detect_isin(bond_input):
-        return bond_input, None  # ISIN route: isin=input, description=None
+    # Case 2: bond_input looks like an ISIN
+    if is_isin_format(bond_input):
+        logger.info(f"✅ bond_input detected as ISIN format: {bond_input}")
+        return bond_input.strip(), None
     
-    # Otherwise, it's a description
-    return None, bond_input  # Description route: isin=None, description=input
+    # Case 3: bond_input is clearly a description
+    logger.info(f"✅ bond_input detected as description: {bond_input}")
+    return None, bond_input
 
-def test_isin_detection():
-    """Test ISIN detection and routing"""
+def validate_inputs(parsed_isin, parsed_description):
+    """
+    Validate that we have sufficient information to proceed
     
-    test_cases = [
-        # (input, expected_is_isin, expected_isin, expected_desc)
-        ("XS2249741674", True, "XS2249741674", None),
-        ("US912810TJ79", True, "US912810TJ79", None),
-        ("T 4.625 02/15/25", False, None, "T 4.625 02/15/25"),
-        ("GALAXY PIPELINE, 3.25%, 30-Sep-2040", False, None, "GALAXY PIPELINE, 3.25%, 30-Sep-2040"),
-        ("GB00B24CGK77", True, "GB00B24CGK77", None),
-        ("XS12345", False, None, "XS12345"),  # Too short
-        ("TOOLONGFORISIN", False, None, "TOOLONGFORISIN"),  # Too long
-    ]
+    Returns:
+        tuple: (is_valid, error_message)
+    """
     
-    print("🧪 Testing ISIN Detection and Routing:")
-    print("=" * 60)
+    # Case 1: We have an ISIN - this is sufficient for database lookup
+    if parsed_isin:
+        return True, None
     
-    for input_str, expected_is_isin, expected_isin, expected_desc in test_cases:
-        is_isin = detect_isin(input_str)
-        routed_isin, routed_desc = fix_isin_routing(input_str)
-        
-        status = "✅" if (is_isin == expected_is_isin and 
-                          routed_isin == expected_isin and 
-                          routed_desc == expected_desc) else "❌"
-        
-        print(f"{status} Input: '{input_str}'")
-        print(f"   Is ISIN: {is_isin} (expected: {expected_is_isin})")
-        print(f"   Routed ISIN: {routed_isin} (expected: {expected_isin})")
-        print(f"   Routed Desc: {routed_desc} (expected: {expected_desc})")
-        print()
+    # Case 2: We have a description - this is sufficient for parsing
+    if parsed_description:
+        return True, None
+    
+    # Case 3: We have neither - this is an error
+    return False, "Either ISIN or bond description must be provided"
 
-if __name__ == "__main__":
-    test_isin_detection()
+def get_routing_strategy(parsed_isin, parsed_description):
+    """
+    Determine the routing strategy based on available inputs
+    
+    Returns:
+        str: routing strategy ("isin_primary", "description_only", "isin_with_fallback")
+    """
+    
+    if parsed_isin and parsed_description:
+        return "isin_with_fallback"
+    elif parsed_isin and not parsed_description:
+        return "isin_primary"
+    elif not parsed_isin and parsed_description:
+        return "description_only"
+    else:
+        return "invalid"

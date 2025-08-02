@@ -18,6 +18,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple, List
 import logging
+from isin_fallback_handler import get_isin_fallback_conventions
 from collections import Counter
 
 # 🎯 BREAKTHROUGH: Import centralized sophisticated date parser - FIXES ALL DATE BUGS!
@@ -113,7 +114,8 @@ class SmartBondParser:
         if not bond_data:
             return None
             
-        issuer = bond_data.get('issuer', '').strip().upper()
+        # 🔧 FIX: Handle potential numeric values
+        issuer = str(bond_data.get('issuer', '')).strip().upper()
         bond_type = bond_data.get('bond_type', '')
         
         # ENHANCED: Map issuers to standard tickers used in ticker_convention_preferences
@@ -259,7 +261,8 @@ class SmartBondParser:
     
     def parse_fractional_coupon(self, coupon_str: str) -> float:
         """Convert fractional coupon notation to decimal"""
-        coupon_str = coupon_str.strip()
+        # 🔧 FIX: Handle numeric inputs
+        coupon_str = str(coupon_str).strip()
         
         # Handle fractions like "4 1/4" -> 4.25
         if ' ' in coupon_str and '/' in coupon_str:
@@ -338,6 +341,10 @@ class SmartBondParser:
         """Parse bond description and extract components"""
         if not description:
             return None
+        
+        # 🔧 FIX: Handle numeric inputs from Google Sheets
+        if isinstance(description, (int, float)):
+            description = str(description)
         
         description = description.strip().upper()
         

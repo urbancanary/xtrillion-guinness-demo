@@ -75,7 +75,7 @@ def test_treasury_yield_fetch():
         logger.info(f"🔍 FETCHING YIELDS FOR: {trade_date}")
         
         # Try to fetch yields using existing function
-        db_path = '/Users/andyseaman/Notebooks/json_receiver_project/google_analysis10/yield_curves.db'
+        db_path = '/Users/andyseaman/Notebooks/json_receiver_project/google_analysis10/bonds_data.db'
         
         if os.path.exists(db_path):
             yield_dict = fetch_treasury_yields(trade_date_parsed, db_path)

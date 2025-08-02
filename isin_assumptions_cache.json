@@ -1,0 +1,44 @@
+{
+  "last_updated": "2025-07-31T12:59:37.839979",
+  "by_country": {
+    "AR": {
+      "most_common_description": "BOPREA 5 10/31/27",
+      "frequency": 4,
+      "total_patterns": 7
+    },
+    "BE": {
+      "most_common_description": "TNETBB 5 \u00bd 03/01/28",
+      "frequency": 1,
+      "total_patterns": 1
+    },
+    "HK": {
+      "most_common_description": "ZHANLO 6.7 09/02/26",
+      "frequency": 1,
+      "total_patterns": 3
+    },
+    "IL": {
+      "most_common_description": "LVIATH 6 \u00be 06/30/30",
+      "frequency": 1,
+      "total_patterns": 10
+    },
+    "PA": {
+      "most_common_description": "PABONT 6 \u215c 07/25/33",
+      "frequency": 1,
+      "total_patterns": 1
+    },
+    "US": {
+      "most_common_description": "XEL 4 \u00bd 06/01/52",
+      "frequency": 2,
+      "total_patterns": 11331
+    },
+    "XS": {
+      "most_common_description": "ZZMTRG 4.751 10/31/27",
+      "frequency": 1,
+      "total_patterns": 884
+    }
+  },
+  "global_fallback": {
+    "description": "CORPORATE BOND, 5.0%, 15-Jan-2030",
+    "source": "global_default"
+  }
+}

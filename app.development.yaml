@@ -1,0 +1,57 @@
+# Google Analysis 10 - Development Environment
+# This is where consolidation and new features are developed
+
+runtime: python311
+
+# Development service name
+service: development
+
+# Development entrypoint with debug capabilities
+entrypoint: gunicorn --bind :$PORT --workers 1 --threads 2 --timeout 120 --reload google_analysis10_api:app
+
+env_variables:
+  PORT: 8080
+  ENVIRONMENT: development
+  DATABASE_SOURCE: gcs
+  PYTHONPATH: /srv
+  VERSION: "develop"
+  API_VERSION: "v1-dev"
+  EXTERNAL_USERS: "false"
+  DEBUG: "true"
+  FLASK_DEBUG: "true"
+
+# Development scaling - cost-optimized
+automatic_scaling:
+  min_instances: 0  # Can scale to zero to save costs
+  max_instances: 3
+  target_cpu_utilization: 0.8
+
+# Standard resources for development
+resources:
+  cpu: 1
+  memory_gb: 4
+
+# Relaxed health checks for development
+readiness_check:
+  path: "/health"
+  check_interval_sec: 10
+  timeout_sec: 8
+  failure_threshold: 3
+  success_threshold: 1
+
+liveness_check:
+  path: "/health"
+  check_interval_sec: 60
+  timeout_sec: 8
+  failure_threshold: 5
+  success_threshold: 1
+
+# Include additional files for development
+skip_files:
+- ^(.*/)?#.*#$
+- ^(.*/)?.*~$
+- ^(.*/)?.*\.py[co]$
+- ^(.*/)?.*/RCS/.*$
+- ^(.*/)?\..*$
+- ^(.*/)?.*\.bak$
+# Note: Include test files in development
