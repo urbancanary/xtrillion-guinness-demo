@@ -50,6 +50,14 @@ except ImportError as e:
 
 app = Flask(__name__)
 
+# Add environment identification endpoints
+try:
+    from environment_info import add_environment_endpoints
+    add_environment_endpoints(app)
+    logger.info("🏷️ Environment identification endpoints added")
+except ImportError:
+    logger.warning("⚠️ Environment info endpoints not available")
+
 # API Key configuration
 VALID_API_KEYS = {
     "gax10_demo_3j5h8m9k2p6r4t7w1q": "demo",

@@ -707,6 +707,14 @@ if ENHANCED_CASH_FLOW_AVAILABLE:
     logger.info("✅ GA10 Enhanced cash flow endpoints added successfully")
 else:
     logger.warning("⚠️ GA10 Enhanced cash flow endpoints not available")
+
+# Add environment identification endpoints
+try:
+    from environment_info import add_environment_endpoints
+    add_environment_endpoints(app)
+    logger.info("🏷️ Environment identification endpoints added")
+except ImportError:
+    logger.warning("⚠️ Environment info endpoints not available")
 universal_parser = None
 
 def initialize_universal_parser():
