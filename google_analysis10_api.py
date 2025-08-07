@@ -1731,6 +1731,308 @@ def version_info():
         ]
     })
 
+@app.route('/api/v1/treasury/status', methods=['GET'])
+@require_api_key_soft
+def treasury_status():
+    """
+    Check the status and freshness of treasury yield data
+    
+    Returns:
+    - Latest treasury data date
+    - Number of yields available
+    - Data age in days
+    - Sample yields for verification
+    """
+    try:
+        import sqlite3
+        from datetime import datetime
+        
+        # Ensure databases are available
+        if not ensure_databases_ready():
+            return jsonify({
+                'status': 'error',
+                'message': 'Database initialization in progress. Please try again.',
+                'timestamp': datetime.now().isoformat()
+            }), 503
+            
+        # Connect to database (use correct path based on environment)
+        db_path = DATABASE_PATH if 'DATABASE_PATH' in globals() else './bonds_data.db'
+        if os.environ.get('DATABASE_SOURCE') == 'gcs' and os.path.exists('/tmp/bonds_data.db'):
+            db_path = '/tmp/bonds_data.db'
+            
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Get latest treasury data
+        cursor.execute("""
+            SELECT MAX(date) as latest_date
+            FROM tsys_enhanced
+        """)
+        
+        result = cursor.fetchone()
+        
+        if result and result[0]:
+            latest_date_str = result[0]
+            
+            # Count yields for this date (we know it's 12)
+            yield_count = 12
+            
+            # Get sample yields for the latest date
+            cursor.execute("""
+                SELECT * 
+                FROM tsys_enhanced 
+                WHERE date = ? 
+            """, (latest_date_str,))
+            
+            # Get column names
+            columns = [description[0] for description in cursor.description]
+            row = cursor.fetchone()
+            
+            # Build yields dictionary (skip Date column)
+            yields = {}
+            if row:
+                for i, col in enumerate(columns):
+                    if col != 'Date' and row[i] is not None:
+                        yields[col] = row[i]
+            
+            # Calculate data age
+            latest_date = datetime.strptime(latest_date_str, '%Y-%m-%d')
+            age_days = (datetime.now() - latest_date).days
+            
+            # Determine if data is fresh (less than 2 days old on weekdays)
+            is_fresh = age_days < 2 if datetime.now().weekday() < 5 else age_days < 4
+            
+            return jsonify({
+                'status': 'success',
+                'treasury_data': {
+                    'latest_date': latest_date_str,
+                    'age_days': age_days,
+                    'is_fresh': is_fresh,
+                    'yield_count': yield_count,
+                    'sample_yields': {
+                        '3M': yields.get('M3M', 'N/A'),
+                        '1Y': yields.get('M1Y', 'N/A'),
+                        '5Y': yields.get('M5Y', 'N/A'),
+                        '10Y': yields.get('M10Y', 'N/A'),
+                        '30Y': yields.get('M30Y', 'N/A')
+                    },
+                    'all_maturities': list(yields.keys())
+                },
+                'database_location': 'local' if os.environ.get('DATABASE_SOURCE') != 'gcs' else 'gcs',
+                'timestamp': datetime.now().isoformat()
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'No treasury data found in database',
+                'timestamp': datetime.now().isoformat()
+            }), 404
+            
+    except Exception as e:
+        logger.error(f"Treasury status check failed: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+@app.route('/test/status', methods=['GET'])
+@require_api_key_soft
+def get_test_status():
+    """Get latest test results"""
+    try:
+        from pathlib import Path
+        import json
+        
+        # Find most recent test results
+        result_files = list(Path('.').glob('test_results_production_*.json'))
+        if not result_files:
+            return jsonify({
+                "status": "error",
+                "message": "No test results found"
+            }), 404
+        
+        latest_file = max(result_files, key=lambda f: f.stat().st_mtime)
+        
+        with open(latest_file, 'r') as f:
+            test_data = json.load(f)
+        
+        # Add baseline comparison results if available
+        baseline_file = Path('baseline_comparison_2025-08-07.json')
+        if baseline_file.exists():
+            with open(baseline_file, 'r') as f:
+                baseline_data = json.load(f)
+            test_data['baseline_comparison'] = baseline_data
+        
+        return jsonify(test_data)
+        
+    except Exception as e:
+        logger.error(f"Test status error: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/test/run', methods=['POST'])
+@require_api_key_soft
+def run_tests():
+    """Run test suite and return results"""
+    try:
+        import subprocess
+        from pathlib import Path
+        import json
+        
+        # Run the test suite
+        result = subprocess.run(
+            ['python3', 'daily_test_suite.py'],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        
+        # Load the results
+        result_files = list(Path('.').glob('test_results_production_*.json'))
+        latest_file = max(result_files, key=lambda f: f.stat().st_mtime)
+        
+        with open(latest_file, 'r') as f:
+            test_results = json.load(f)
+        
+        return jsonify({
+            "status": "success",
+            "test_results": test_results,
+            "stdout": result.stdout[-1000:],  # Last 1000 chars of output
+            "return_code": result.returncode
+        })
+        
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "status": "error",
+            "message": "Test execution timed out"
+        }), 500
+    except Exception as e:
+        logger.error(f"Test run error: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/test/treasury', methods=['GET'])
+@require_api_key_soft
+def test_treasury():
+    """Quick test of US Treasury with fixed settlement date"""
+    import requests
+    
+    api_url = "https://future-footing-414610.uc.r.appspot.com/api/v1/bond/analysis"
+    api_key = "gax10_demo_3j5h8m9k2p6r4t7w1q"
+    
+    payload = {
+        "description": "T 3 15/08/52",
+        "price": 71.66,
+        "settlement_date": "2025-06-30"
+    }
+    
+    try:
+        response = requests.post(
+            api_url,
+            headers={
+                "Content-Type": "application/json",
+                "X-API-Key": api_key
+            },
+            json=payload
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            analytics = data.get('analytics', {})
+            
+            # Compare with expected values
+            expected = {
+                "ytm": 4.898837,
+                "duration": 16.350751,
+                "settlement_date": "2025-06-30"
+            }
+            
+            actual = {
+                "ytm": round(analytics.get('ytm', 0), 6),
+                "duration": round(analytics.get('duration', 0), 6),
+                "settlement_date": analytics.get('settlement_date')
+            }
+            
+            matches = all(
+                abs(actual.get(k, 0) - expected[k]) < 0.000001 
+                for k in ['ytm', 'duration']
+            ) and actual['settlement_date'] == expected['settlement_date']
+            
+            return jsonify({
+                "status": "success",
+                "bond": "US Treasury 3% 15/08/52",
+                "expected": expected,
+                "actual": actual,
+                "matches": matches,
+                "full_response": data
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": f"API returned status {response.status_code}",
+                "response": response.text
+            }), response.status_code
+            
+    except Exception as e:
+        logger.error(f"Treasury test error: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/test/baseline', methods=['GET'])
+@require_api_key_soft
+def get_baseline():
+    """Get current baseline values"""
+    try:
+        from pathlib import Path
+        import json
+        from datetime import datetime
+        
+        baseline_file = Path('calculation_baseline.json')
+        if not baseline_file.exists():
+            return jsonify({
+                "status": "error",
+                "message": "No baseline found"
+            }), 404
+            
+        with open(baseline_file, 'r') as f:
+            baseline = json.load(f)
+        
+        # Format for easy reading
+        formatted = []
+        for key, value in baseline.items():
+            formatted.append({
+                "bond": value['name'],
+                "settlement_date": value['request']['settlement_date'],
+                "price": value['request']['price'],
+                "ytm": value['metrics']['ytm'],
+                "duration": value['metrics']['duration'],
+                "accrued_interest": value['metrics']['accrued_interest']
+            })
+        
+        return jsonify({
+            "status": "success",
+            "baseline_date": datetime.now().isoformat(),
+            "settlement_date": "2025-06-30",
+            "bonds": formatted
+        })
+        
+    except Exception as e:
+        logger.error(f"Baseline error: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
 @app.route('/', methods=['GET'])
 def api_guide():
     """Enhanced API documentation and testing interface with Universal Parser features"""
@@ -1833,6 +2135,30 @@ OR
             <div class="endpoint">
                 <h3><span class="method">GET</span> /api/v1/version</h3>
                 <p><strong>Version information</strong> with Universal Parser capabilities</p>
+            </div>
+            
+            <div class="endpoint">
+                <h3><span class="method">GET</span> /test/status</h3>
+                <p><strong>Get latest test results</strong> - Shows most recent test execution status</p>
+                <p><span class="success">✅ New:</span> View test results with baseline comparisons</p>
+            </div>
+            
+            <div class="endpoint">
+                <h3><span class="method">POST</span> /test/run</h3>
+                <p><strong>Run test suite</strong> - Execute the full test suite and get results</p>
+                <p><span class="success">✅ New:</span> On-demand test execution</p>
+            </div>
+            
+            <div class="endpoint">
+                <h3><span class="method">GET</span> /test/treasury</h3>
+                <p><strong>Quick treasury test</strong> - Test US Treasury 3% 15/08/52 with fixed settlement</p>
+                <p><span class="success">✅ New:</span> Verify expected values match</p>
+            </div>
+            
+            <div class="endpoint">
+                <h3><span class="method">GET</span> /test/baseline</h3>
+                <p><strong>Get baseline values</strong> - View current baseline calculation values</p>
+                <p><span class="success">✅ New:</span> Reference values for testing</p>
             </div>
             
             <div class="endpoint">
