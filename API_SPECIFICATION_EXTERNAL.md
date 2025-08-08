@@ -136,7 +136,7 @@ X-API-Key: your_api_key_here
 
 **Request:**
 ```bash
-curl -s "https://api.x-trillion.ai/api/v1/health" | jq '.'
+curl -s "https://api.x-trillion.ai/health" | jq '.'
 ```
 
 **Response:**
@@ -548,7 +548,7 @@ class XTrillionBondAPI {
 
 
     async checkHealth() {
-        const response = await fetch(`${this.baseURL}/health`);
+        const response = await fetch('https://api.x-trillion.ai/health');
         return await response.json();
     }
 }
