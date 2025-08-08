@@ -282,6 +282,8 @@ def create_matured_bond_response(bond_input, maturity_info, context=None):
         base_response['context'] = 'default'
     
     return base_response
+
+def apply_context_formatting(response_data, context):
     """
     Context-aware response formatting for different use cases
     
@@ -325,7 +327,8 @@ def create_matured_bond_response(bond_input, maturity_info, context=None):
             'metadata': {
                 'api_version': response_data['metadata']['api_version'],
                 'calculation_engine': response_data['metadata']['calculation_engine'],
-                'context_applied': 'portfolio'
+                'context_applied': 'portfolio',
+                'response_time_ms': response_data['metadata'].get('response_time_ms')
             }
         }
     
@@ -487,6 +490,8 @@ def format_portfolio_business_response(bond_data, portfolio_metrics):
 
 # Valid API keys (professional format - 24+ characters)
 VALID_API_KEYS = {
+    'gax10_admin_9k3m7p5w2r8t6v4x1z': {'name': 'RMB Admin Master Key', 'permissions': 'full', 'user': 'rmb_admin', 'tier': 'admin'},
+    'gax10_maia_7k9d2m5p8w1e6r4t3y2x': {'name': 'Maia Software API Access', 'permissions': 'full', 'user': 'maia', 'tier': 'paid'},
     'gax10_inst_7k9d2m5p8w1e6r4t3y': {'name': 'Institutional Access Key', 'permissions': 'full', 'user': 'institutional'},
     'gax10_dev_4n8s6k2x7p9v5m1w8z': {'name': 'Development Environment Key', 'permissions': 'full', 'user': 'development'},
     'gax10_demo_3j5h8m9k2p6r4t7w1q': {'name': 'Public Demonstration Key', 'permissions': 'full', 'user': 'demo'},
@@ -499,12 +504,11 @@ VALID_API_KEYS = {
 
 def require_api_key_soft(f):
     """
-    Soft API key authentication - logs but doesn't block
+    STRICT API key authentication for production and maia-dev
     
-    This is a transitional decorator that:
-    - Accepts valid API keys and logs usage
-    - Allows requests without keys (backward compatibility)
-    - Sets up framework for future strict authentication
+    - Production & Maia-dev: Requires valid API key (blocks without it)
+    - Logs all API usage for billing/monitoring
+    - Special handling for Maia's paid tier
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -512,18 +516,31 @@ def require_api_key_soft(f):
         api_key = request.headers.get('X-API-Key')
         
         if not api_key:
-            logger.info(f"ℹ️  No API key provided for {request.endpoint} (soft auth - allowing)")
-            # Continue without blocking
-            return f(*args, **kwargs)
+            logger.warning(f"❌ No API key provided for {request.endpoint}")
+            return jsonify({
+                "status": "error",
+                "code": 401,
+                "message": "API key required in X-API-Key header",
+                "info": "Please check your API key"
+            }), 401
         
         if api_key not in VALID_API_KEYS:
-            logger.warning(f"⚠️  Invalid API key attempted: {api_key[:8]}*** for {request.endpoint} (soft auth - allowing)")
-            # Continue without blocking, but log the invalid attempt
-            return f(*args, **kwargs)
+            logger.warning(f"❌ Invalid API key attempt: {api_key[:10]}... for {request.endpoint}")
+            return jsonify({
+                "status": "error",
+                "code": 401,
+                "message": "Invalid API key",
+                "info": "Please check your API key"
+            }), 401
         
         # Log successful authentication
         key_info = VALID_API_KEYS[api_key]
-        logger.info(f"✅ API key authenticated: {key_info['user']} ({key_info['name']}) for {request.endpoint}")
+        
+        # Special logging for Maia's paid tier
+        if key_info.get('user') == 'maia':
+            logger.info(f"💰 MAIA API USAGE: {key_info['name']} accessing {request.endpoint} at {request.host}")
+        else:
+            logger.info(f"✅ API key authenticated: {key_info['user']} ({key_info['name']}) for {request.endpoint}")
         
         # Store API key info in request context for later use
         request.api_key = api_key
@@ -1067,6 +1084,9 @@ def bond_analysis():
     - "technical": Enhanced response with debugging and parsing details
     - Default (no context): Standard comprehensive response
     """
+    import time
+    start_time = time.time()
+    
     # 🔧 FIX: Ensure databases are available before processing
     if not ensure_databases_ready():
         return jsonify({
@@ -1084,6 +1104,9 @@ def bond_analysis():
         # 🔧 FIX: Handle numeric inputs from Google Sheets
         if isinstance(bond_input, (int, float)):
             bond_input = str(bond_input)
+        
+        # Extract overrides if provided
+        overrides = data.get('overrides', {})
         
         if not data or not bond_input:
             return jsonify({
@@ -1186,7 +1209,8 @@ def bond_analysis():
                 settlement_date=data.get('settlement_date'),
                 db_path=DATABASE_PATH,
                 validated_db_path=VALIDATED_DB_PATH,
-                bloomberg_db_path=BLOOMBERG_DB_PATH
+                bloomberg_db_path=BLOOMBERG_DB_PATH,
+                overrides=overrides
             )
 
             # Handle ISIN lookup failure with intelligent fallback
@@ -1206,7 +1230,8 @@ def bond_analysis():
                         settlement_date=data.get('settlement_date'),
                         db_path=DATABASE_PATH,
                         validated_db_path=VALIDATED_DB_PATH,
-                        bloomberg_db_path=BLOOMBERG_DB_PATH
+                        bloomberg_db_path=BLOOMBERG_DB_PATH,
+                        overrides=overrides
                     )
                     
                     if fallback_result.get('success'):
@@ -1384,18 +1409,22 @@ def bond_analysis():
                 'calculation_engine': 'xtrillion_core_quantlib_engine',
                 'route_used': result.get('route_used'),
                 'universal_parser_available': UNIVERSAL_PARSER_AVAILABLE,
-                'enhanced_metrics_count': 13
+                'enhanced_metrics_count': 13,
+                'response_time_ms': int((time.time() - start_time) * 1000)
             }
         }
+        
+        # Add override information if applicable
+        if result.get('overrides_applied'):
+            response['overrides_applied'] = result.get('overrides_applied')
+            response['override_note'] = result.get('override_note')
         
         # Extract context parameter for response formatting
         context = data.get('context')  # Can be "portfolio", "technical", or None
         
-        # TODO: Context-aware formatting will be implemented in future version
-        # For now, return the standard response format
+        # Apply context-aware formatting if requested
         if context:
-            response['context_requested'] = context
-            response['context_note'] = "Context-aware formatting coming in future version"
+            response = apply_context_formatting(response, context)
         
         logger.info(f"✅ Successfully calculated using XTrillion Core: {bond_input} (route: {result.get('route_used')}, context: {context or 'default'})")
         logger.info(f"📊 XTrillion Core Result: YTM={result.get('ytm'):.4f}%, Duration={result.get('duration'):.2f}, Route={result.get('route_used')}")
@@ -1428,6 +1457,9 @@ def portfolio_analysis():
     Query Parameters:
     - settlement_days: Settlement days override (default: 0)
     """
+    import time
+    start_time = time.time()
+    
     # 🔧 FIX: Ensure databases are available before processing
     if not ensure_databases_ready():
         return jsonify({
@@ -1587,7 +1619,8 @@ def portfolio_analysis():
                     'available': UNIVERSAL_PARSER_AVAILABLE,
                     'initialized': universal_parser is not None,
                     'parsing_redundancy_eliminated': UNIVERSAL_PARSER_AVAILABLE
-                }
+                },
+                'response_time_ms': int((time.time() - start_time) * 1000)
             }
         }
         

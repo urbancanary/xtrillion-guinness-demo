@@ -70,9 +70,10 @@ VALIDATED_DB_PATH = get_flexible_db_path('validated_quantlib_bonds.db')  # Fixed
 
 # --- Convention Constants ---
 TREASURY_CONVENTIONS = {
-    'fixed_frequency': 'Semiannual',
-    'day_count': 'ActualActual_Bond',  # ✅ CORRECTED: Based on 223-bond Bloomberg testing
-    'business_day_convention': 'Following',  # ✅ CORRECTED: Match ticker table 
+    'frequency': 'Semiannual',
+    'day_count': 'ActualActual.Bond',  # ✅ Using QuantLib-style name for clarity
+    'business_day_convention': 'Following',  # ✅ CORRECTED: Match ticker table
+    'fixed_business_convention': 'Unadjusted',  # For payment date adjustments
     'end_of_month': True
 }
 
@@ -281,13 +282,13 @@ def get_validated_conventions_by_ticker(ticker, validated_db_path):
             # Get the most common convention for this ticker
             query = """
             SELECT 
-                fixed_day_count,
-                fixed_business_convention,
-                fixed_frequency,
+                day_count,
+                business_convention,
+                frequency,
                 COUNT(*) as count
             FROM validated_quantlib_bonds
             WHERE description LIKE ? || '%'
-            GROUP BY fixed_day_count, fixed_business_convention, fixed_frequency
+            GROUP BY day_count, business_convention, frequency
             ORDER BY count DESC
             LIMIT 1
             """
@@ -296,9 +297,9 @@ def get_validated_conventions_by_ticker(ticker, validated_db_path):
             
             if result:
                 conventions = {
-                    'fixed_day_count': result[0],
-                    'fixed_business_convention': result[1],
-                    'fixed_frequency': result[2],
+                    'day_count': result[0],
+                    'business_convention': result[1],
+                    'frequency': result[2],
                     'source': 'validated_ticker_lookup',
                     'bond_count': result[3]
                 }
@@ -411,7 +412,7 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
             conventions.update(TREASURY_CONVENTIONS)
         logger.info(f"{log_prefix} Final conventions: {conventions}")
 
-        frequency = get_ql_frequency(conventions.get('fixed_frequency'))
+        frequency = get_ql_frequency(conventions.get('frequency'))
 
         logger.info(f"{log_prefix} Creating QuantLib bond schedule...")
         
@@ -455,20 +456,31 @@ def calculate_bond_metrics_with_conventions_using_shared_engine(isin, coupon, ma
 
         # Map day count convention from string to QuantLib object
         day_count_str = conventions.get('day_count', '30/360')
-        if day_count_str == 'ActualActual_Bond':
-            day_counter = ql.ActualActual(ql.ActualActual.ISMA)  # ✅ CORRECT: Bond convention for Treasuries = ISMA in QuantLib
-        elif day_count_str == 'ActualActual_ISDA':
-            day_counter = ql.ActualActual(ql.ActualActual.ISDA)  # ISDA convention
-        elif day_count_str == 'ActualActual_ISMA':
-            day_counter = ql.ActualActual(ql.ActualActual.ISMA)
-        elif day_count_str == '30/360':
-            day_counter = ql.Thirty360(ql.Thirty360.BondBasis)
-        elif day_count_str == 'ACT/360':
-            day_counter = ql.Actual360()
-        elif day_count_str == 'ACT/365':
-            day_counter = ql.Actual365Fixed()
+        
+        # Enhanced mapping to handle both internal names and database names
+        day_count_map = {
+            # Preferred QuantLib-style names
+            'ActualActual.Bond': ql.ActualActual(ql.ActualActual.Bond),
+            'ActualActual.ISMA': ql.ActualActual(ql.ActualActual.ISMA),
+            'ActualActual.ISDA': ql.ActualActual(ql.ActualActual.ISDA),
+            'Thirty360.BondBasis': ql.Thirty360(ql.Thirty360.BondBasis),
+            'Actual360': ql.Actual360(),
+            'Actual365Fixed': ql.Actual365Fixed(),
+            
+            # Legacy/compatibility names
+            'ActualActual_Bond': ql.ActualActual(ql.ActualActual.Bond),
+            'Actual/Actual (ISMA)': ql.ActualActual(ql.ActualActual.Bond),  # Map ISMA to Bond for clarity
+            '30/360': ql.Thirty360(ql.Thirty360.BondBasis),
+            'Thirty360': ql.Thirty360(ql.Thirty360.BondBasis),
+            'ACT/360': ql.Actual360(),
+            'ACT/365': ql.Actual365Fixed(),
+        }
+        
+        if day_count_str in day_count_map:
+            day_counter = day_count_map[day_count_str]
         else:
-            day_counter = ql.ActualActual(ql.ActualActual.ISDA)  # Default for Treasury
+            logger.warning(f"Unknown day count convention '{day_count_str}', defaulting to ActualActual.ISDA")
+            day_counter = ql.ActualActual(ql.ActualActual.ISDA)
         
         logger.info(f"{log_prefix} Using day count convention: {day_count_str} -> {day_counter}")
         
@@ -717,8 +729,33 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
         # 🔧 FIX: Handle numeric inputs from Google Sheets
         if isinstance(description, (int, float)):
             description = str(description)
-            
-        parsed_data = parser.parse_bond_description(description)
+        
+        # Check if bond data came from database lookup (ISIN route)
+        if bond_data.get('from_database'):
+            logger.info(f"🗄️ Using bond data from database lookup, skipping parsing")
+            # Create parsed_data from database values
+            # Handle date format conversion from DD/MM/YYYY to YYYY-MM-DD
+            maturity_raw = bond_data.get('maturity', '2030-01-01')
+            if '/' in maturity_raw and len(maturity_raw.split('/')) == 3:
+                # Convert DD/MM/YYYY to YYYY-MM-DD
+                parts = maturity_raw.split('/')
+                maturity_formatted = f"{parts[2]}-{parts[1].zfill(2)}-{parts[0].zfill(2)}"
+            else:
+                maturity_formatted = maturity_raw
+                
+            parsed_data = {
+                'issuer': bond_data.get('issuer', 'UNKNOWN'),
+                'coupon': bond_data.get('coupon', 0.0),
+                'maturity': maturity_formatted,
+                'bond_type': 'treasury' if 'TREASURY' in str(bond_data.get('issuer', '')).upper() else 'corporate',
+                'from_database': True,
+                'day_count': bond_data.get('day_count'),
+                'frequency': bond_data.get('frequency'),
+                'business_convention': bond_data.get('business_convention')
+            }
+            logger.info(f"📅 Converted maturity date: {maturity_raw} → {maturity_formatted}")
+        else:
+            parsed_data = parser.parse_bond_description(description)
         if not parsed_data:
             # 🔧 FIX: Enhanced hierarchy fallback when parsing fails
             logger.warning(f"⚠️ Parsing failed for '{description}', using fallback hierarchy")
@@ -753,11 +790,13 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
         # FIXED: Enhanced lookup hierarchy
         ticker_conventions = None
         
-        # Step 1: If no ISIN found, try to find it from validated DB using parsed data
-        if not isin and parsed_data and validated_db_path:
-            isin = find_isin_from_parsed_data(parsed_data, validated_db_path)
-            if isin:
-                logger.info(f"📋 Found ISIN {isin} via validated DB lookup for {description}")
+        # IMPORTANT: Do NOT look up ISIN from parsed data
+        # Reg S and 144A bonds can have same description but different ISINs
+        # We should use the parsing route without ISIN lookup to avoid confusion
+        # if not isin and parsed_data and validated_db_path:
+        #     isin = find_isin_from_parsed_data(parsed_data, validated_db_path)
+        #     if isin:
+        #         logger.info(f"📋 Found ISIN {isin} via validated DB lookup for {description}")
         
         # Step 2: If still no ISIN, try ticker lookup for conventions
         # Store ticker conventions to apply after default_conventions is defined
@@ -774,8 +813,17 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
         logger.info(f"🏛️ Treasury detection: {is_treasury} via {detection_method} for ISIN {isin}")
         
         # Set default conventions (can be overridden by specific bond info)
-        # 🔧 FIX: Use fallback conventions if parsing failed
-        if parsed_data.get('used_fallback'):
+        # 🔧 FIX: Use conventions from database if available
+        if parsed_data.get('from_database'):
+            # Use conventions from database lookup
+            default_conventions = {
+                'frequency': parsed_data.get('frequency', 'Semiannual'),
+                'day_count': parsed_data.get('day_count', '30/360'),
+                'business_day_convention': parsed_data.get('business_convention', 'Following'),
+                'end_of_month': False
+            }
+            logger.info(f"📋 Using conventions from database: {default_conventions}")
+        elif parsed_data.get('used_fallback'):
             default_conventions = parsed_data.get('fallback_conventions', {
                 'frequency': 'Semiannual',
                 'day_count': '30/360',
@@ -783,11 +831,11 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
                 'end_of_month': False
             })
             # Map field names
-            default_conventions['fixed_frequency'] = default_conventions.get('frequency', 'Semiannual')
+            default_conventions['frequency'] = default_conventions.get('frequency', 'Semiannual')
             default_conventions['business_day_convention'] = default_conventions.get('business_convention', 'Following')
         else:
             default_conventions = {
-                'fixed_frequency': 'Semiannual',
+                'frequency': 'Semiannual',
                 'day_count': '30/360',
                 'business_day_convention': 'Following',
                 'end_of_month': False
@@ -796,13 +844,13 @@ def process_bond_portfolio(portfolio_data, db_path, validated_db_path, bloomberg
         # Apply ticker conventions if found and no ISIN was available
         if ticker_conventions and not isin:
             logger.info(f"📋 Applying ticker conventions as no ISIN was found")
-            if 'fixed_business_convention' in ticker_conventions:
-                default_conventions['fixed_business_convention'] = ticker_conventions['fixed_business_convention']
-                default_conventions['business_day_convention'] = ticker_conventions['fixed_business_convention']
-            if 'fixed_day_count' in ticker_conventions:
-                default_conventions['day_count'] = ticker_conventions['fixed_day_count']
-            if 'fixed_frequency' in ticker_conventions:
-                default_conventions['fixed_frequency'] = ticker_conventions['fixed_frequency']
+            if 'business_convention' in ticker_conventions:
+                default_conventions['fixed_business_convention'] = ticker_conventions['business_convention']
+                default_conventions['business_day_convention'] = ticker_conventions['business_convention']
+            if 'day_count' in ticker_conventions:
+                default_conventions['day_count'] = ticker_conventions['day_count']
+            if 'frequency' in ticker_conventions:
+                default_conventions['frequency'] = ticker_conventions['frequency']
         
         # Get price from various possible field names
         price = bond_data.get('price') or bond_data.get('CLOSING PRICE') or bond_data.get('closing_price')

@@ -1,0 +1,393 @@
+{
+  "44c25c432dc1f5652c0436001f454716": {
+    "name": "US Treasury 3% 2052",
+    "request": {
+      "description": "T 3 15/08/52",
+      "price": 71.66,
+      "settlement_date": "2025-06-30"
+    },
+    "metrics": {
+      "ytm": 4.898837,
+      "duration": 16.350751,
+      "convexity": 370.184051,
+      "pvbp": 0.117169,
+      "macaulay_duration": 16.75125,
+      "clean_price": 71.66,
+      "dirty_price": 72.778785,
+      "accrued_interest": 1.118785,
+      "ytm_annual": 4.958834,
+      "duration_annual": 0,
+      "spread": 4.883708953857369,
+      "z_spread": -0.902225414539667
+    },
+    "response": {
+      "analytics": {
+        "accrued_interest": 1.1187845303867405,
+        "annual_duration": 15.959828,
+        "annual_macaulay_duration": 16.75125,
+        "clean_price": 71.66,
+        "convexity": 370.1840512143145,
+        "dirty_price": 72.778785,
+        "duration": 16.35075142802697,
+        "macaulay_duration": 16.75125,
+        "price": 71.66,
+        "pvbp": 0.11716948473324128,
+        "settlement_date": "2025-06-30",
+        "spread": 4.883708953857369,
+        "ytm": 4.898837089538573,
+        "ytm_annual": 4.958834,
+        "z_spread": -0.902225414539667
+      },
+      "bond": {
+        "conventions": {
+          "business_day_convention": "Following",
+          "day_count": "ActualActual_Bond",
+          "end_of_month": true,
+          "fixed_business_convention": "Unadjusted",
+          "fixed_frequency": "Semiannual"
+        },
+        "description": "T 3 15/08/52",
+        "isin": null,
+        "route_used": "parse_hierarchy"
+      },
+      "calculations": {
+        "basis": "Semi-annual compounding",
+        "business_day_convention": "Following",
+        "day_count": "ActualActual_Bond"
+      },
+      "field_descriptions": {
+        "annual_duration": "Modified duration (annual)",
+        "convexity": "Price convexity (semi-annual)",
+        "duration": "Modified duration (years)",
+        "macaulay_duration": "Macaulay duration (semi-annual)",
+        "pvbp": "Price Value of Basis Point",
+        "ytm": "Yield to maturity (bond native convention, %)",
+        "ytm_annual": "Yield to maturity (annual equivalent, %)",
+        "z_spread": "Z-spread over treasury curve (bps)"
+      },
+      "metadata": {
+        "api_version": "v1.2",
+        "calculation_engine": "xtrillion_core_quantlib_engine",
+        "enhanced_metrics_count": 13,
+        "route_used": "parse_hierarchy",
+        "universal_parser_available": true
+      },
+      "status": "success"
+    }
+  },
+  "284245f6c24bebf52e5fa589113eee04": {
+    "name": "US Treasury 4.125% 2032",
+    "request": {
+      "description": "T 4.125 15/11/32",
+      "price": 99.5,
+      "settlement_date": "2025-06-30"
+    },
+    "metrics": {
+      "ytm": 4.203621,
+      "duration": 6.267369,
+      "convexity": 46.06892,
+      "pvbp": 0.06236,
+      "macaulay_duration": 6.399097,
+      "clean_price": 99.5,
+      "dirty_price": 100.015625,
+      "accrued_interest": 0.515625,
+      "ytm_annual": 4.247798,
+      "duration_annual": 0,
+      "spread": 17.362143516540574,
+      "z_spread": 13.157100735665743
+    },
+    "response": {
+      "analytics": {
+        "accrued_interest": 0.5156249999999973,
+        "annual_duration": 6.138352,
+        "annual_macaulay_duration": 6.399097,
+        "clean_price": 99.5,
+        "convexity": 46.06892024435439,
+        "dirty_price": 100.015625,
+        "duration": 6.267368617467613,
+        "macaulay_duration": 6.399097,
+        "price": 99.5,
+        "pvbp": 0.06236031774380275,
+        "settlement_date": "2025-06-30",
+        "spread": 17.362143516540574,
+        "ytm": 4.203621435165406,
+        "ytm_annual": 4.247798,
+        "z_spread": 13.157100735665743
+      },
+      "bond": {
+        "conventions": {
+          "business_day_convention": "Following",
+          "day_count": "ActualActual_Bond",
+          "end_of_month": true,
+          "fixed_business_convention": "Unadjusted",
+          "fixed_frequency": "Semiannual"
+        },
+        "description": "T 4.125 15/11/32",
+        "isin": null,
+        "route_used": "parse_hierarchy"
+      },
+      "calculations": {
+        "basis": "Semi-annual compounding",
+        "business_day_convention": "Following",
+        "day_count": "ActualActual_Bond"
+      },
+      "field_descriptions": {
+        "annual_duration": "Modified duration (annual)",
+        "convexity": "Price convexity (semi-annual)",
+        "duration": "Modified duration (years)",
+        "macaulay_duration": "Macaulay duration (semi-annual)",
+        "pvbp": "Price Value of Basis Point",
+        "ytm": "Yield to maturity (bond native convention, %)",
+        "ytm_annual": "Yield to maturity (annual equivalent, %)",
+        "z_spread": "Z-spread over treasury curve (bps)"
+      },
+      "metadata": {
+        "api_version": "v1.2",
+        "calculation_engine": "xtrillion_core_quantlib_engine",
+        "enhanced_metrics_count": 13,
+        "route_used": "parse_hierarchy",
+        "universal_parser_available": true
+      },
+      "status": "success"
+    }
+  },
+  "b021b74b05fac2b01ffcd15552327739": {
+    "name": "US Treasury 2.875% 2032",
+    "request": {
+      "description": "T 2.875 15/05/32",
+      "price": 89.25,
+      "settlement_date": "2025-06-30"
+    },
+    "metrics": {
+      "ytm": 4.720328,
+      "duration": 6.081167,
+      "convexity": 42.429757,
+      "pvbp": 0.054274,
+      "macaulay_duration": 6.224693,
+      "clean_price": 89.25,
+      "dirty_price": 89.609375,
+      "accrued_interest": 0.359375,
+      "ytm_annual": 4.776032,
+      "duration_annual": 0,
+      "spread": 69.0328330993652,
+      "z_spread": 67.85897149014126
+    },
+    "response": {
+      "analytics": {
+        "accrued_interest": 0.3593750000000063,
+        "annual_duration": 5.940951,
+        "annual_macaulay_duration": 6.224693,
+        "clean_price": 89.25,
+        "convexity": 42.42975694957387,
+        "dirty_price": 89.609375,
+        "duration": 6.081167188683635,
+        "macaulay_duration": 6.224693,
+        "price": 89.25,
+        "pvbp": 0.05427441715900144,
+        "settlement_date": "2025-06-30",
+        "spread": 69.0328330993652,
+        "ytm": 4.720328330993652,
+        "ytm_annual": 4.776032,
+        "z_spread": 67.85897149014126
+      },
+      "bond": {
+        "conventions": {
+          "business_day_convention": "Following",
+          "day_count": "ActualActual_Bond",
+          "end_of_month": true,
+          "fixed_business_convention": "Unadjusted",
+          "fixed_frequency": "Semiannual"
+        },
+        "description": "T 2.875 15/05/32",
+        "isin": null,
+        "route_used": "parse_hierarchy"
+      },
+      "calculations": {
+        "basis": "Semi-annual compounding",
+        "business_day_convention": "Following",
+        "day_count": "ActualActual_Bond"
+      },
+      "field_descriptions": {
+        "annual_duration": "Modified duration (annual)",
+        "convexity": "Price convexity (semi-annual)",
+        "duration": "Modified duration (years)",
+        "macaulay_duration": "Macaulay duration (semi-annual)",
+        "pvbp": "Price Value of Basis Point",
+        "ytm": "Yield to maturity (bond native convention, %)",
+        "ytm_annual": "Yield to maturity (annual equivalent, %)",
+        "z_spread": "Z-spread over treasury curve (bps)"
+      },
+      "metadata": {
+        "api_version": "v1.2",
+        "calculation_engine": "xtrillion_core_quantlib_engine",
+        "enhanced_metrics_count": 13,
+        "route_used": "parse_hierarchy",
+        "universal_parser_available": true
+      },
+      "status": "success"
+    }
+  },
+  "40f3e9799552be2f3b7fb4b794f09afb": {
+    "name": "Panama 3.87% 2060",
+    "request": {
+      "description": "PANAMA 3.87 23/07/60",
+      "price": 56.6,
+      "settlement_date": "2025-06-30"
+    },
+    "metrics": {
+      "ytm": 7.326316,
+      "duration": 13.574786,
+      "convexity": 318.81525,
+      "pvbp": 0.076833,
+      "macaulay_duration": 14.072052,
+      "clean_price": 56.6,
+      "dirty_price": 58.28775,
+      "accrued_interest": 1.68775,
+      "ytm_annual": 7.460503,
+      "duration_annual": 0,
+      "spread": 247.63161641914405,
+      "z_spread": null
+    },
+    "response": {
+      "analytics": {
+        "accrued_interest": 1.68775000000001,
+        "annual_duration": 13.095092,
+        "annual_macaulay_duration": 14.072052,
+        "clean_price": 56.6,
+        "convexity": 318.8152504052344,
+        "dirty_price": 58.28775,
+        "duration": 13.574785802537521,
+        "macaulay_duration": 14.072052,
+        "price": 56.6,
+        "pvbp": 0.07683328764236237,
+        "settlement_date": "2025-06-30",
+        "spread": 247.63161641914405,
+        "ytm": 7.32631616419144,
+        "ytm_annual": 7.460503,
+        "z_spread": null
+      },
+      "bond": {
+        "conventions": {
+          "bloomberg_accrued": 9137.5,
+          "business_day_convention": "Following",
+          "coupon": 3.87,
+          "day_count": "30/360",
+          "description": "PANAMA 3.87 07/23/60",
+          "difference": 0.0,
+          "end_of_month": false,
+          "fixed_business_convention": "Unadjusted",
+          "fixed_day_count": "Thirty360",
+          "fixed_frequency": "Semiannual",
+          "isin": "US698299BL70",
+          "maturity": "2060-07-23",
+          "pass_status": "PASS",
+          "quantlib_accrued": 9137.5,
+          "settlement_date": "2025-04-18",
+          "validation_date": "2025-07-12T18:37:57.938900"
+        },
+        "description": "PANAMA 3.87 23/07/60",
+        "isin": "US698299BL70",
+        "route_used": "parse_hierarchy"
+      },
+      "calculations": {
+        "basis": "Semi-annual compounding",
+        "business_day_convention": "Following",
+        "day_count": "30/360"
+      },
+      "field_descriptions": {
+        "annual_duration": "Modified duration (annual)",
+        "convexity": "Price convexity (semi-annual)",
+        "duration": "Modified duration (years)",
+        "macaulay_duration": "Macaulay duration (semi-annual)",
+        "pvbp": "Price Value of Basis Point",
+        "ytm": "Yield to maturity (bond native convention, %)",
+        "ytm_annual": "Yield to maturity (annual equivalent, %)",
+        "z_spread": "Z-spread over treasury curve (bps)"
+      },
+      "metadata": {
+        "api_version": "v1.2",
+        "calculation_engine": "xtrillion_core_quantlib_engine",
+        "enhanced_metrics_count": 13,
+        "route_used": "parse_hierarchy",
+        "universal_parser_available": true
+      },
+      "status": "success"
+    }
+  },
+  "73e53fc5bea839e8799f4ffb48df43f5": {
+    "name": "Pemex 6.5% 2027",
+    "request": {
+      "description": "PEMEX 6.5 13/06/27",
+      "price": 95.75,
+      "settlement_date": "2025-06-30"
+    },
+    "metrics": {
+      "ytm": 8.900973,
+      "duration": 1.782232,
+      "convexity": 4.123253,
+      "pvbp": 0.017065,
+      "macaulay_duration": 1.86155,
+      "clean_price": 95.75,
+      "dirty_price": 96.05274,
+      "accrued_interest": 0.30274,
+      "ytm_annual": 9.099041,
+      "duration_annual": 0,
+      "spread": 517.0972676038742,
+      "z_spread": 500.3564907682576
+    },
+    "response": {
+      "analytics": {
+        "accrued_interest": 0.3027397260273901,
+        "annual_duration": 1.706294,
+        "annual_macaulay_duration": 1.86155,
+        "clean_price": 95.75,
+        "convexity": 4.12325282951858,
+        "dirty_price": 96.05274,
+        "duration": 1.7822320210903244,
+        "macaulay_duration": 1.86155,
+        "price": 95.75,
+        "pvbp": 0.017064871601939858,
+        "settlement_date": "2025-06-30",
+        "spread": 517.0972676038742,
+        "ytm": 8.900972676038743,
+        "ytm_annual": 9.099041,
+        "z_spread": 500.3564907682576
+      },
+      "bond": {
+        "conventions": {
+          "business_day_convention": "Unadjusted",
+          "day_count": "Thirty360",
+          "end_of_month": false,
+          "fixed_business_convention": "Unadjusted",
+          "fixed_frequency": "Semiannual"
+        },
+        "description": "PEMEX 6.5 13/06/27",
+        "isin": null,
+        "route_used": "parse_hierarchy"
+      },
+      "calculations": {
+        "basis": "Semi-annual compounding",
+        "business_day_convention": "Unadjusted",
+        "day_count": "Thirty360"
+      },
+      "field_descriptions": {
+        "annual_duration": "Modified duration (annual)",
+        "convexity": "Price convexity (semi-annual)",
+        "duration": "Modified duration (years)",
+        "macaulay_duration": "Macaulay duration (semi-annual)",
+        "pvbp": "Price Value of Basis Point",
+        "ytm": "Yield to maturity (bond native convention, %)",
+        "ytm_annual": "Yield to maturity (annual equivalent, %)",
+        "z_spread": "Z-spread over treasury curve (bps)"
+      },
+      "metadata": {
+        "api_version": "v1.2",
+        "calculation_engine": "xtrillion_core_quantlib_engine",
+        "enhanced_metrics_count": 13,
+        "route_used": "parse_hierarchy",
+        "universal_parser_available": true
+      },
+      "status": "success"
+    }
+  }
+}

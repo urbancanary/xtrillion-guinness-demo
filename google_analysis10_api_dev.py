@@ -66,9 +66,19 @@ VALID_API_KEYS = {
 }
 
 def require_api_key(f):
-    """API key authentication decorator"""
+    """
+    API key authentication decorator
+    NO AUTHENTICATION in development environment - it's RMB's personal playground
+    """
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        # Skip authentication in development environment
+        service_name = os.environ.get('GAE_SERVICE', 'unknown')
+        if service_name == 'development':
+            logger.debug("🧪 RMB Development environment - bypassing API key check")
+            return f(*args, **kwargs)
+            
+        # For other environments (shouldn't happen in dev API file)
         api_key = request.headers.get('X-API-Key')
         if not api_key or api_key not in VALID_API_KEYS:
             return jsonify({

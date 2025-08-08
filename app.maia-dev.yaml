@@ -1,0 +1,50 @@
+# Google Analysis 10 - Maia Development Environment
+# Stable development environment for Maia software company
+# Pre-production testing and integration
+
+runtime: python311
+
+# Maia development service
+service: maia-dev
+
+# Stable development entrypoint
+entrypoint: gunicorn --bind :$PORT --workers 1 --threads 3 --timeout 90 google_analysis10_api:app
+
+env_variables:
+  PORT: 8080
+  ENVIRONMENT: maia-dev
+  DATABASE_SOURCE: gcs
+  PYTHONPATH: /srv
+  VERSION: "maia-dev"
+  API_VERSION: "v1-dev"
+  EXTERNAL_USERS: "false"
+  DEBUG: "false"  # More stable than rmb-dev
+  ENABLE_TESTING: "true"
+
+# Moderate scaling for development
+automatic_scaling:
+  min_instances: 0  # Can scale to zero
+  max_instances: 5  # Higher than rmb-dev
+  target_cpu_utilization: 0.7
+
+# Good resources for testing
+resources:
+  cpu: 1
+  memory_gb: 6
+
+# Standard health checks
+readiness_check:
+  path: "/health"
+  check_interval_sec: 8
+  timeout_sec: 6
+  failure_threshold: 2
+  success_threshold: 2
+
+liveness_check:
+  path: "/health"  
+  check_interval_sec: 45
+  timeout_sec: 6
+  failure_threshold: 4
+  success_threshold: 2
+
+# Note: No skip_files - use .gcloudignore instead

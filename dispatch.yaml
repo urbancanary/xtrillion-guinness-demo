@@ -1,0 +1,13 @@
+# App Engine Dispatch Rules
+# Routes requests to different services based on hostname
+
+dispatch:
+  # Route api-dev.x-trillion.ai to maia-dev service
+  - url: "api-dev.x-trillion.ai/*"
+    service: maia-dev
+    
+  # Route api.x-trillion.ai to production (default service)
+  - url: "api.x-trillion.ai/*"
+    service: default
+    
+  # Don't add a catch-all rule - let App Engine handle service-specific URLs naturally

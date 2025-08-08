@@ -130,15 +130,6 @@ The engine provides comprehensive analytics with accurate compounding basis hand
 X-API-Key: your_api_key_here
 ```
 
-**Available API Keys:**
-
-| Environment | API Key | Usage |
-|-------------|---------|-------|
-| **Production** | `gax10_maia_7k9d2m5p8w1e6r4t3y2x` | Maia Software - Production access |
-| **Demo** | `gax10_maia_7k9d2m5p8w1e6r4t3y2x` | Public demonstrations |
-| **Development** | `gax10_dev_4n8s6k2x7p9v5m8p1z` | Development testing |
-| **Testing** | `gax10_test_9r4t7w2k5m8p1z6x3v` | Internal testing |
-
 ### 4.2 System Health Check
 
 **Endpoint:** `GET /health`

@@ -496,11 +496,11 @@ class SmartBondParser:
             
             # Get convention statistics from validated bonds
             query = """
-                SELECT fixed_day_count, fixed_business_convention, fixed_frequency, 
+                SELECT day_count, business_convention, frequency, 
                        COUNT(*) as count
                 FROM validated_quantlib_bonds 
                 WHERE pass_status = 'PASS'
-                GROUP BY fixed_day_count, fixed_business_convention, fixed_frequency
+                GROUP BY day_count, business_convention, frequency
                 ORDER BY count DESC
             """
             

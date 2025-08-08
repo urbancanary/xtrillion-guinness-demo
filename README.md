@@ -18,13 +18,13 @@ The complete API documentation including:
 
 ## 🚀 **Live Production API**
 
-**Base URL:** `https://future-footing-414610.uc.r.appspot.com`
+**Base URL:** `https://api.x-trillion.ai`
 
 ### Quick Test
 ```bash
-curl -X POST "https://future-footing-414610.uc.r.appspot.com/api/v1/bond/parse-and-calculate" \
+curl -X POST "https://api.x-trillion.ai/api/v1/bond/analysis" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: gax10_demo_3j5h8m9k2p6r4t7w1q" \
+  -H "X-API-Key: gax10_maia_7k9d2m5p8w1e6r4t3y2x" \
   -d '{"description": "T 3 15/08/52", "price": 71.66}'
 ```
 

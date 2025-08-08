@@ -4,7 +4,7 @@
 runtime: python311
 
 # Standard entrypoint for Flask app
-entrypoint: gunicorn --bind :$PORT --workers 1 --threads 2 --timeout 0 google_analysis10_api:app
+entrypoint: gunicorn --bind :$PORT --workers 1 --threads 2 --timeout 0 google_analysis10_api_dev:app
 
 service: development
 

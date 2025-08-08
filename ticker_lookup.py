@@ -51,9 +51,9 @@ def get_conventions_from_ticker(ticker, db_path):
             
             if result:
                 conventions = {
-                    'fixed_day_count': result[0],
-                    'fixed_business_convention': result[1],
-                    'fixed_frequency': result[2]
+                    'day_count': result[0],
+                    'business_convention': result[1],
+                    'frequency': result[2]
                 }
                 logger.info(f"📋 Found ticker conventions for {ticker}: {conventions}")
                 return conventions
@@ -78,13 +78,13 @@ def get_validated_conventions_by_ticker(ticker, validated_db_path):
             # Get the most common convention for this ticker
             query = """
             SELECT 
-                fixed_day_count,
-                fixed_business_convention,
-                fixed_frequency,
+                day_count,
+                business_convention,
+                frequency,
                 COUNT(*) as count
             FROM validated_quantlib_bonds
             WHERE description LIKE ? || '%'
-            GROUP BY fixed_day_count, fixed_business_convention, fixed_frequency
+            GROUP BY day_count, business_convention, frequency
             ORDER BY count DESC
             LIMIT 1
             """
@@ -93,9 +93,9 @@ def get_validated_conventions_by_ticker(ticker, validated_db_path):
             
             if result:
                 conventions = {
-                    'fixed_day_count': result[0],
-                    'fixed_business_convention': result[1],
-                    'fixed_frequency': result[2],
+                    'day_count': result[0],
+                    'business_convention': result[1],
+                    'frequency': result[2],
                     'source': 'validated_ticker_lookup',
                     'bond_count': result[3]
                 }

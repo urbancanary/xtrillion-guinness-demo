@@ -1,0 +1,32 @@
+API KEYS QUICK REFERENCE
+========================
+
+YOUR KEYS:
+----------
+Admin Key (works everywhere): gax10_admin_9k3m7p5w2r8t6v4x1z
+Demo Key (for sheets):        gax10_demo_3j5h8m9k2p6r4t7w1q
+
+MAIA'S KEY:
+-----------
+gax10_maia_7k9d2m5p8w1e6r4t3y2x
+
+ENVIRONMENTS:
+-------------
+Your Dev:    https://development-dot-future-footing-414610.uc.r.appspot.com (NO KEY NEEDED!)
+Maia Dev:    https://api-dev.x-trillion.ai (KEY REQUIRED)
+Production:  https://api.x-trillion.ai (KEY REQUIRED)
+
+GOOGLE SHEETS:
+--------------
+Already configured with demo key - NO CHANGES NEEDED
+
+QUICK TEST:
+-----------
+curl -X POST https://api.x-trillion.ai/api/v1/bond/analysis \
+  -H "X-API-Key: gax10_admin_9k3m7p5w2r8t6v4x1z" \
+  -H "Content-Type: application/json" \
+  -d '{"description":"T 3 15/08/52","price":71.66}'
+
+MONITOR MAIA:
+-------------
+gcloud app logs tail -s default | grep "💰"
