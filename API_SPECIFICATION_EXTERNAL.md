@@ -1,16 +1,17 @@
 # XTrillion Core Bond Calculation Engine API Specification
 
-**Date:** July 30, 2025  
+**Date:** July 29, 2025  
 **Version:** 10.0.0  
 **Status:** ✅ Examples Tested & Verified  
 **Base URL:** https://api.x-trillion.ai/api/v1
 
 ## ⚡ **Performance** (Verified Benchmarks)
-- **Individual Bond Analysis**: ~115ms response time
-- **Portfolio Processing**: **341 bonds/second** (25-bond portfolio in 73ms)
-- **Intelligent Caching**: 5ms for repeated calculations (6x performance boost)
-- **Production Optimized**: Cold start eliminated with embedded databases
-- **Scalability**: Handles large portfolios with sub-second response times
+- **Bond Analysis**: 80-500ms (comprehensive analytics with 13+ metrics)
+- **Portfolio Processing**: 100-150ms per bond
+- **Production Optimized**: Embedded databases for consistent performance
+- **Scalability**: Linear scaling with portfolio size
+
+*Note: Processing times measured at server. Total response time will include network latency based on your location.*
 
 ## 1. Overview
 
@@ -115,9 +116,10 @@ The engine provides comprehensive analytics with accurate compounding basis hand
 | `/health` | GET | System status | Health check, capabilities |
 | `/bond/analysis` | POST | Individual bond | Full analytics, risk metrics |
 | `/portfolio/analysis` | POST | Portfolio analysis | Individual + aggregated metrics |
-| `/bond/cashflow` | POST | Cash flow analysis | Flexible filtering, multiple contexts |
-| `/bond/cashflow/next` | POST | Next payment | Upcoming cash flow only |
-| `/bond/cashflow/period/{days}` | POST | Period filter | Cash flows within specified days |
+| `/bond/analysis/flexible` | POST | Flexible input | Array format with auto-detection |
+| `/bond/cashflow` | POST | Cash flow analysis | All, next, or period filtering |
+| `/bond/cashflow/next` | POST | Next cash flow | Convenience endpoint |
+| `/bond/cashflow/period/<days>` | POST | Period cash flows | Cash flows within N days |
 
 ### 4.1 Base URL & Authentication
 
@@ -132,7 +134,8 @@ X-API-Key: your_api_key_here
 
 | Environment | API Key | Usage |
 |-------------|---------|-------|
-| **Demo** | `gax10_demo_3j5h8m9k2p6r4t7w1q` | Public demonstrations |
+| **Production** | `gax10_maia_7k9d2m5p8w1e6r4t3y2x` | Maia Software - Production access |
+| **Demo** | `gax10_maia_7k9d2m5p8w1e6r4t3y2x` | Public demonstrations |
 | **Development** | `gax10_dev_4n8s6k2x7p9v5m8p1z` | Development testing |
 | **Testing** | `gax10_test_9r4t7w2k5m8p1z6x3v` | Internal testing |
 
@@ -159,8 +162,6 @@ curl -s "https://api.x-trillion.ai/api/v1/health" | jq '.'
     "Real-time yield, duration, and accrued interest calculations",
     "Individual bond analytics with institutional-grade precision",
     "Portfolio analysis with weighted-average risk metrics",
-    "Advanced cash flow analysis with date and period filtering",
-    "Next cash flow identification for payment scheduling",
     "Multi-database bond lookup with automatic fallback",
     "Comprehensive bond reference database with 4,471+ validated bonds",
     "Automatic Treasury bond detection and parsing",
@@ -187,13 +188,13 @@ Accept inputs in any order - automatically detects parameter types:
 # Array format - any order works
 curl -X POST "https://api.x-trillion.ai/api/v1/bond/analysis/flexible" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: gax10_demo_3j5h8m9k2p6r4t7w1q" \
+  -H "X-API-Key: your_api_key_here" \
   -d '["T 3 15/08/52", 71.66, "2025-07-31"]'
 
 # Or price first
 curl -X POST "https://api.x-trillion.ai/api/v1/bond/analysis/flexible" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: gax10_demo_3j5h8m9k2p6r4t7w1q" \
+  -H "X-API-Key: your_api_key_here" \
   -d '[71.66, "T 3 15/08/52", "2025-07-31"]'
 ```
 
@@ -203,11 +204,40 @@ curl -X POST "https://api.x-trillion.ai/api/v1/bond/analysis/flexible" \
 ```bash
 curl -X POST "https://api.x-trillion.ai/api/v1/bond/analysis" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: gax10_demo_3j5h8m9k2p6r4t7w1q" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "description": "T 3 15/08/52",
     "price": 71.66,
     "settlement_date": "2025-07-30"
+  }' | jq '.'
+```
+
+**Request with Parameter Overrides:**
+```bash
+# Scenario analysis with modified coupon rate
+curl -X POST "https://api.x-trillion.ai/api/v1/bond/analysis" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "description": "AAPL 3.45 02/09/2029",
+    "price": 97.25,
+    "overrides": {
+      "coupon": 3.75
+    }
+  }' | jq '.'
+
+# Override bond conventions for precise calculations
+curl -X POST "https://api.x-trillion.ai/api/v1/bond/analysis" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "isin": "XS1234567890",
+    "price": 98.50,
+    "overrides": {
+      "day_count": "ActualActual.Bond",
+      "frequency": "Annual",
+      "business_convention": "ModifiedFollowing"
+    }
   }' | jq '.'
 ```
 
@@ -278,7 +308,7 @@ curl -X POST "https://api.x-trillion.ai/api/v1/bond/analysis" \
 ```bash
 curl -X POST "https://api.x-trillion.ai/api/v1/portfolio/analysis" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: gax10_demo_3j5h8m9k2p6r4t7w1q" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "data": [
       {
@@ -297,14 +327,14 @@ curl -X POST "https://api.x-trillion.ai/api/v1/portfolio/analysis" \
 
 **Alternative - ISIN Approach:**
 ```bash
-# For clients with ISIN codes (Taiwan client naming)
+# For clients using ISIN codes
 curl -X POST "https://api.x-trillion.ai/api/v1/portfolio/analysis" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: gax10_demo_3j5h8m9k2p6r4t7w1q" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "data": [
       {
-        "BOND_CD": "US00131MAB90",       // ISIN code
+        "ISIN": "US00131MAB90",       // ISIN code
         "CLOSING PRICE": 71.66,
         "WEIGHTING": 50.0
       }
@@ -313,11 +343,15 @@ curl -X POST "https://api.x-trillion.ai/api/v1/portfolio/analysis" \
 ```
 
 **Field Notes:**
-- `BOND_CD`: ISIN codes only (Taiwan client field naming)
-- `description`: Bond descriptions (more reliable for parsing)
-- Current limitation: ISIN lookup has reliability issues
+
+- `ISIN: ISIN code
+
+- `description`: Bond descriptions 
+
+  
 
 **Response:**
+
 ```json
 {
   "status": "success",
@@ -361,7 +395,7 @@ curl -X POST "https://api.x-trillion.ai/api/v1/portfolio/analysis" \
   "metadata": {
     "api_version": "10.0.0",
     "processing_type": "portfolio_optimized",
-    "response_format": "YAS + Full"
+    "response_format": "Optimized + Full"
   }
 }
 ```
@@ -370,13 +404,14 @@ curl -X POST "https://api.x-trillion.ai/api/v1/portfolio/analysis" \
 
 **Endpoint:** `POST /bond/cashflow`
 
-**Advanced Cash Flow Analysis with Period Filtering:**
+Calculate future cash flows for bonds with advanced filtering options.
 
 **Request:**
 ```bash
+# Get all future cash flows
 curl -X POST "https://api.x-trillion.ai/api/v1/bond/cashflow" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: gax10_demo_3j5h8m9k2p6r4t7w1q" \
+  -H "X-API-Key: your_api_key_here" \
   -d '{
     "bonds": [
       {
@@ -384,12 +419,16 @@ curl -X POST "https://api.x-trillion.ai/api/v1/bond/cashflow" \
         "nominal": 1000000
       }
     ],
-    "filter": "period",
-    "days": 90,
+    "filter": "all",
     "context": "portfolio",
     "settlement_date": "2025-07-30"
   }' | jq '.'
 ```
+
+**Filter Options:**
+- `"filter": "all"` - Returns all future cash flows (default)
+- `"filter": "next"` - Returns only the next cash flow
+- `"filter": "period"` with `"days": 90` - Returns cash flows within specified days
 
 **Response:**
 ```json
@@ -397,26 +436,73 @@ curl -X POST "https://api.x-trillion.ai/api/v1/bond/cashflow" \
   "status": "success",
   "portfolio_cash_flows": [
     {
-      "date": "2025-08-15",
-      "amount": 15000.00,
-      "days_from_settlement": 16
+      "date": "2025-12-31",
+      "amount": 4164.38,
+      "days_from_settlement": 152
+    },
+    {
+      "date": "2026-06-30",
+      "amount": 4958.90,
+      "days_from_settlement": 333
     }
   ],
-  "filter_applied": {
-    "type": "period",
-    "days": 90,
-    "description": "Cash flows within 90 days from settlement"
-  },
   "metadata": {
-    "api_version": "10.0.0",
-    "settlement_date": "2025-07-30",
-    "total_bonds": 1,
+    "total_cash_flows": 2,
     "total_nominal": 1000000,
-    "context": "portfolio",
-    "total_cash_flows": 1
+    "settlement_date": "July 30th, 2025"
   }
 }
 ```
+
+#### 4.5a Next Cash Flow Only
+
+**Endpoint:** `POST /bond/cashflow/next`
+
+Convenience endpoint to get only the next cash flow.
+
+```bash
+curl -X POST "https://api.x-trillion.ai/api/v1/bond/cashflow/next" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "bonds": [
+      {
+        "description": "T 3 15/08/52",
+        "nominal": 1000000
+      }
+    ]
+  }' | jq '.'
+```
+
+#### 4.5b Period-Based Cash Flows
+
+**Endpoint:** `POST /bond/cashflow/period/<days>`
+
+Get cash flows within a specific number of days.
+
+```bash
+# Get cash flows for next 180 days
+curl -X POST "https://api.x-trillion.ai/api/v1/bond/cashflow/period/180" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "bonds": [
+      {
+        "description": "T 3 15/08/52",
+        "nominal": 1000000
+      },
+      {
+        "description": "AAPL 3.45 02/09/29",
+        "nominal": 500000
+      }
+    ]
+  }' | jq '.'
+```
+
+**Use Cases:**
+- **Liquidity Management**: Track upcoming cash flows for portfolio liquidity
+- **Reinvestment Planning**: Identify cash available for reinvestment
+- **Cash Flow Matching**: Match assets to liabilities by payment dates
 
 ---
 
@@ -427,7 +513,7 @@ curl -X POST "https://api.x-trillion.ai/api/v1/bond/cashflow" \
  * XTrillion Bond API Client
  */
 class XTrillionBondAPI {
-    constructor(apiKey = "gax10_demo_3j5h8m9k2p6r4t7w1q") {
+    constructor(apiKey = "your_api_key_here") {
         this.baseURL = "https://api.x-trillion.ai/api/v1";
         this.apiKey = apiKey;
         this.headers = {
@@ -469,26 +555,6 @@ class XTrillionBondAPI {
         return await response.json();
     }
 
-    async analyzeCashFlows({ 
-        bonds, 
-        context = "portfolio",
-        filter = "all",
-        days = null,
-        settlementDate = null 
-    }) {
-        const payload = { bonds, context };
-        if (filter !== "all") payload.filter = filter;
-        if (days) payload.days = days;
-        if (settlementDate) payload.settlement_date = settlementDate;
-
-        const response = await fetch(`${this.baseURL}/bond/cashflow`, {
-            method: 'POST',
-            headers: this.headers,
-            body: JSON.stringify(payload)
-        });
-
-        return await response.json();
-    }
 
     async checkHealth() {
         const response = await fetch(`${this.baseURL}/health`);
@@ -538,16 +604,6 @@ const api = new XTrillionBondAPI();
         console.log(`Portfolio Yield: ${portfolioResult.portfolio_metrics.portfolio_yield}%`);
         console.log(`Portfolio Duration: ${portfolioResult.portfolio_metrics.portfolio_duration} years`);
 
-        // Cash flow analysis
-        console.log("\n=== Cash Flow Analysis ===");
-        const cashflowResult = await api.analyzeCashFlows({
-            bonds: [
-                { description: "T 3 15/08/52", nominal: 1000000 }
-            ],
-            filter: "period",
-            days: 90
-        });
-        console.log(`Cash flows: ${cashflowResult.portfolio_cash_flows.length}`);
 
     } catch (error) {
         console.error("API Test Failed:", error);
@@ -569,7 +625,159 @@ Our calculation engine undergoes continuous validation against industry benchmar
 
 ---
 
-## 7. Error Handling
+## 7. Context-Aware Responses
+
+The API supports context-aware responses to optimize for different use cases. Add a `context` parameter to any bond analysis request.
+
+### 7.1 Available Contexts
+
+#### Portfolio Context
+Simplified response optimized for portfolio aggregation (50% smaller):
+
+```bash
+curl -X POST "https://api.x-trillion.ai/api/v1/bond/analysis" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "description": "T 3 15/08/52",
+    "price": 71.66,
+    "context": "portfolio"
+  }' | jq '.'
+```
+
+**Portfolio Context Response:**
+```json
+{
+  "status": "success",
+  "analytics": {
+    "yield_semi": 4.902780,
+    "yield_annual": 4.962873,
+    "duration_semi": 16.260414,
+    "duration_annual": 15.871346,
+    "macaulay_duration_semi": 16.65902,
+    "macaulay_duration_annual": 16.65902,
+    "convexity": 367.199951,
+    "accrued_interest": 1.383978,
+    "pvbp": 0.116522,
+    "clean_price": 71.66,
+    "dirty_price": 73.043978,
+    "settlement_date": "2025-08-01"
+  },
+  "bond": {
+    "description": "T 3 15/08/52",
+    "isin": null
+  },
+  "context": "portfolio",
+  "optimization": "Metrics optimized for portfolio aggregation with both annual/semi-annual basis",
+  "metadata": {
+    "api_version": "v1.2",
+    "calculation_engine": "xtrillion_core_quantlib_engine",
+    "context_applied": "portfolio"
+  }
+}
+```
+
+#### Technical Context
+Enhanced response with debugging and parsing details:
+
+```bash
+curl -X POST "https://api.x-trillion.ai/api/v1/bond/analysis" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "description": "T 3 15/08/52",
+    "price": 71.66,
+    "context": "technical"
+  }' | jq '.'
+```
+
+Technical context adds:
+- `debug_info` object with parsing route, engine details, and field counts
+- Enhanced metadata for troubleshooting
+- Complete convention details applied
+
+### 7.2 Context Benefits
+
+| Context | Response Size | Use Case | Key Features |
+|---------|--------------|----------|--------------|
+| `portfolio` | ~720 chars (50% smaller) | Portfolio aggregation | Dual annual/semi metrics, simplified structure |
+| `technical` | ~1,900 chars | Debugging & development | Parsing details, debug info, full metadata |
+| Default | ~1,500 chars | General use | Comprehensive metrics with field descriptions |
+
+---
+
+## 8. Parameter Overrides
+
+The API supports overriding bond parameters to accommodate custom bond static data or scenario testing.
+
+### 8.1 Supported Override Fields
+
+| Field | Type | Description | Example |
+|-------|------|-------------|---------|
+| `coupon` | float | Coupon rate (%) | 3.25 |
+| `maturity` | string | Maturity date | "2052-08-15" |
+| `day_count` | string | Day count convention | "ActualActual.Bond" |
+| `frequency` | string | Payment frequency | "Semiannual" |
+| `business_convention` | string | Business day convention | "Following" |
+| `issuer` | string | Bond issuer | "US Treasury" |
+| `currency` | string | Currency code | "USD" |
+| `face_value` | float | Face value | 1000000 |
+| `end_of_month` | bool | End of month rule | true |
+| `first_coupon_date` | string | First coupon date | "2025-02-15" |
+| `issue_date` | string | Issue date | "2022-08-15" |
+
+### 8.2 Override Example
+
+```bash
+curl -X POST "https://api.x-trillion.ai/api/v1/bond/analysis" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{
+    "description": "IBM 4.0 06/20/2042",
+    "price": 85.75,
+    "overrides": {
+      "coupon": 4.25,
+      "maturity": "2042-06-20",
+      "day_count": "Thirty360.BondBasis",
+      "frequency": "Semiannual",
+      "issuer": "International Business Machines Corp"
+    }
+  }' | jq '.'
+```
+
+**Response includes override information:**
+```json
+{
+  "analytics": {
+    "ytm": 5.234,
+    "duration": 12.87,
+    "convexity": 245.6,
+    "pvbp": 0.1102
+    // ... other metrics
+  },
+  "overrides_applied": {
+    "coupon": 4.25,
+    "maturity": "2042-06-20",
+    "day_count": "Thirty360.BondBasis",
+    "frequency": "Semiannual",
+    "issuer": "International Business Machines Corp"
+  },
+  "override_note": "Calculation performed with 5 parameter override(s)"
+}
+```
+
+### 8.3 Use Cases
+
+1. **External Static Data**: When you have bond reference data from external systems
+2. **Scenario Analysis**: Test different coupon or maturity scenarios
+3. **Custom Conventions**: Apply specific day count or business conventions
+4. **Data Corrections**: Override a base bond with new characteristics
+
+**Note**: Overrides are applied after database lookup but before calculation. The API will use the provided overrides in place of any database or parsed values.
+
+---
+
+## 9. Error Handling
 
 ### HTTP Status Codes
 - `200` - Success
@@ -589,13 +797,13 @@ Our calculation engine undergoes continuous validation against industry benchmar
 
 ---
 
-## 8. Contact & Support
+## 10. Contact & Support
 
 **XTrillion Core Bond Calculation Engine**  
 *Institutional-grade bond analytics with Bloomberg compatibility*
 
 **API Base URL:** `https://api.x-trillion.ai/api/v1`  
-**Demo API Key:** `gax10_demo_3j5h8m9k2p6r4t7w1q`
+**Request a Demo:** Contact us for API access
 
 *API specification last updated: July 29, 2025*
 
