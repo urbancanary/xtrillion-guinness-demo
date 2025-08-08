@@ -18,21 +18,37 @@ def add_environment_endpoints(app):
         Environment identification endpoint
         Shows clearly which service is responding
         """
+        from flask import request
+        
         # Get environment variables
         service_name = os.environ.get('GAE_SERVICE', 'unknown')
         version = os.environ.get('GAE_VERSION', 'unknown')
         env_name = os.environ.get('ENVIRONMENT', 'unknown')
         instance_id = os.environ.get('GAE_INSTANCE', 'local')
         
-        # Map service names to friendly names
-        service_map = {
-            'default': '🌍 PRODUCTION',
-            'maia-dev': '👥 MAIA DEVELOPMENT',
-            'development': '🧪 RMB DEVELOPMENT',
-            'hotfix': '🚨 HOTFIX ENVIRONMENT'
-        }
+        # Get the host being accessed
+        accessed_host = request.host
         
-        friendly_name = service_map.get(service_name, service_name.upper())
+        # Enhanced mapping that considers the domain being accessed
+        if 'api.x-trillion.ai' in accessed_host:
+            if service_name == 'default':
+                friendly_name = '🌍 PRODUCTION (via api.x-trillion.ai)'
+            else:
+                friendly_name = f'⚠️ WRONG ROUTING! {service_name} service on production domain!'
+        elif 'api-dev.x-trillion.ai' in accessed_host:
+            if service_name == 'maia-dev':
+                friendly_name = '👥 MAIA DEVELOPMENT (via api-dev.x-trillion.ai)'
+            else:
+                friendly_name = f'⚠️ WRONG ROUTING! {service_name} service on maia-dev domain!'
+        else:
+            # Fallback to service-based naming
+            service_map = {
+                'default': '🌍 PRODUCTION',
+                'maia-dev': '👥 MAIA DEVELOPMENT',
+                'development': '🧪 RMB DEVELOPMENT',
+                'hotfix': '🚨 HOTFIX ENVIRONMENT'
+            }
+            friendly_name = service_map.get(service_name, service_name.upper())
         
         # Color coding for terminal/logs
         color_map = {
@@ -85,10 +101,54 @@ def add_environment_endpoints(app):
     @app.route('/env/banner', methods=['GET'])
     def environment_banner():
         """Simple text banner for quick identification"""
+        from flask import request
+        
         service_name = os.environ.get('GAE_SERVICE', 'unknown')
         version = os.environ.get('GAE_VERSION', 'unknown')
+        accessed_host = request.host
         
-        banners = {
+        # Enhanced banners that show the accessed domain
+        if 'api.x-trillion.ai' in accessed_host:
+            if service_name == 'default':
+                banner = """
+╔══════════════════════════════════════════╗
+║        🌍 PRODUCTION ENVIRONMENT 🌍       ║
+║         api.x-trillion.ai                ║
+║         DO NOT DEPLOY DIRECTLY!          ║
+║         Service: default                 ║
+║         Version: {:<24}║
+╚══════════════════════════════════════════╝
+"""
+            else:
+                banner = """
+╔══════════════════════════════════════════╗
+║          ⚠️  ROUTING ERROR! ⚠️            ║
+║     {} service on api.x-trillion.ai      ║
+║         CHECK DISPATCH RULES!            ║
+╚══════════════════════════════════════════╝
+""".format(service_name)
+        elif 'api-dev.x-trillion.ai' in accessed_host:
+            if service_name == 'maia-dev':
+                banner = """
+╔══════════════════════════════════════════╗
+║      👥 MAIA DEVELOPMENT ENVIRONMENT     ║
+║         api-dev.x-trillion.ai            ║
+║         Safe for Maia testing            ║
+║         Service: maia-dev                ║
+║         Version: {:<24}║
+╚══════════════════════════════════════════╝
+"""
+            else:
+                banner = """
+╔══════════════════════════════════════════╗
+║          ⚠️  ROUTING ERROR! ⚠️            ║
+║   {} service on api-dev.x-trillion.ai   ║
+║         CHECK DISPATCH RULES!            ║
+╚══════════════════════════════════════════╝
+""".format(service_name)
+        else:
+            # Use original banners for direct App Engine URLs
+            banners = {
             'default': """
 ╔══════════════════════════════════════════╗
 ║        🌍 PRODUCTION ENVIRONMENT 🌍       ║
@@ -122,10 +182,11 @@ def add_environment_endpoints(app):
 ╚══════════════════════════════════════════╝
 """
         }
+            
+            banner = banners.get(service_name, f"Unknown Service: {service_name}")
         
-        banner = banners.get(service_name, f"Unknown Service: {service_name}")
-        if service_name in banners:
-            # Truncate version to 24 chars and format it
+        # Format the banner with version if it has a placeholder
+        if '{}' in banner or '{:' in banner:
             truncated_version = version[:24]
             banner = banner.format(truncated_version)
             
