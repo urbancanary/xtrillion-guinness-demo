@@ -94,7 +94,7 @@ def add_environment_endpoints(app):
 ║        🌍 PRODUCTION ENVIRONMENT 🌍       ║
 ║         DO NOT DEPLOY DIRECTLY!          ║
 ║         Service: default                 ║
-║         Version: {}                      ║
+║         Version: {:<24}║
 ╚══════════════════════════════════════════╝
 """,
             'maia-dev': """
@@ -102,7 +102,7 @@ def add_environment_endpoints(app):
 ║      👥 MAIA DEVELOPMENT ENVIRONMENT     ║
 ║         Safe for Maia testing            ║
 ║         Service: maia-dev                ║
-║         Version: {}                      ║
+║         Version: {:<24}║
 ╚══════════════════════════════════════════╝
 """,
             'development': """
@@ -110,7 +110,7 @@ def add_environment_endpoints(app):
 ║      🧪 RMB DEVELOPMENT ENVIRONMENT      ║
 ║         Your personal playground         ║
 ║         Service: development             ║
-║         Version: {}                      ║
+║         Version: {:<24}║
 ╚══════════════════════════════════════════╝
 """,
             'hotfix': """
@@ -118,14 +118,16 @@ def add_environment_endpoints(app):
 ║       🚨 HOTFIX ENVIRONMENT 🚨           ║
 ║         Emergency fixes only!            ║
 ║         Service: hotfix                  ║
-║         Version: {}                      ║
+║         Version: {:<24}║
 ╚══════════════════════════════════════════╝
 """
         }
         
         banner = banners.get(service_name, f"Unknown Service: {service_name}")
         if service_name in banners:
-            banner = banner.format(version[:20])
+            # Truncate version to 24 chars and format it
+            truncated_version = version[:24]
+            banner = banner.format(truncated_version)
             
         from flask import Response
         return Response(banner, mimetype='text/plain')
