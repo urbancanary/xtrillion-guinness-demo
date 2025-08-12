@@ -514,6 +514,8 @@ function XT_SMART(bond_range, price_range, settlement_date, force_refresh, envir
     // Or could be enhanced to use individual settlement dates per bond
     if (settlementColumn.length > 0 && settlementColumn[0]) {
       detectedSettlement = settlementColumn[0];
+      // Debug: Add the detected settlement date to results for troubleshooting
+      results.push(["DEBUG", "Detected Settlement", detectedSettlement, typeof detectedSettlement, "DEBUG", config.name]);
     }
   } else {
     // Single column input - just prices
@@ -526,6 +528,8 @@ function XT_SMART(bond_range, price_range, settlement_date, force_refresh, envir
   // Use detected settlement date if no explicit one provided
   if (!settlement_date && detectedSettlement) {
     settlement_date = detectedSettlement;
+    // Debug: Show what settlement date will be used
+    results.push(["DEBUG", "Using Settlement", settlement_date, formatSettlementDate(settlement_date), "DEBUG", config.name]);
   }
   
   if (bonds.length !== prices.length) {
