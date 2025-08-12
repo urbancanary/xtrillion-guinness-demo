@@ -1,8 +1,8 @@
 # XTrillion Core Bond Calculation Engine API Specification
 
-**Date:** July 30, 2025  
-**Version:** 10.0.0  
-**Status:** ✅ Examples Tested & Verified  
+**Date:** August 12, 2025  
+**Version:** 10.1.0  
+**Status:** ✅ Examples Tested & Verified (Full Precision Update)  
 **Base URL:** https://api.x-trillion.ai/api/v1
 
 ## ⚡ **Performance** (Verified Benchmarks)
@@ -11,6 +11,7 @@
 - **Intelligent Caching**: 5ms for repeated calculations (6x performance boost)
 - **Production Optimized**: Cold start eliminated with embedded databases
 - **Scalability**: Handles large portfolios with sub-second response times
+- **🆕 Full Precision**: Raw numeric values (6+ decimal places) for institutional accuracy
 
 ## 1. Overview
 

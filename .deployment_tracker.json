@@ -1,0 +1,35 @@
+{
+  "deployment_history": [
+    {
+      "environment": "development",
+      "version": "dev-20250812-182253-2081356",
+      "commit": "2081356",
+      "branch": "develop",
+      "timestamp": "2025-08-12T18:22:53.998638",
+      "status": "started"
+    },
+    {
+      "environment": "development",
+      "version": "dev-20250812-182253-2081356",
+      "commit": "2081356",
+      "branch": "develop",
+      "timestamp": "2025-08-12T18:22:58.349651",
+      "status": "failed"
+    }
+  ],
+  "current_stage": {
+    "development": null,
+    "maia-dev": null,
+    "production": null
+  },
+  "rules": {
+    "enforce_order": true,
+    "required_order": [
+      "development",
+      "maia-dev",
+      "production"
+    ],
+    "minimum_testing_hours": 1,
+    "minimum_maia_hours": 24
+  }
+}

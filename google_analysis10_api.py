@@ -642,14 +642,14 @@ def format_bond_response(bond_data, response_format='YAS'):
         (duration_value is None or (0 <= duration_value <= 100))
     )
     
-    # ✅ ENHANCED: YAS Response with better formatting
+    # ✅ FIXED: YAS Response with raw numeric values for full precision
     yas_response = {
         'isin': isin_value,
         'name': name_value,
-        'yield': f"{yield_value:.2f}%" if yield_value is not None else None,
-        'duration': f"{duration_value:.1f} years" if duration_value is not None else None,
-        'spread': f"{spread_value:.0f} bps" if spread_value is not None else None,
-        'accrued_interest': f"{accrued_value:.2f}%" if accrued_value is not None else None,
+        'yield': float(yield_value) if yield_value is not None else None,  # Raw number, not formatted string
+        'duration': float(duration_value) if duration_value is not None else None,  # Raw number, not formatted string
+        'spread': float(spread_value) if spread_value is not None else None,  # Raw number, not formatted string
+        'accrued_interest': float(accrued_value) if accrued_value is not None else None,  # Raw number, not formatted string
         'price': float(price_value) if price_value is not None else 0,
         'country': bond_data.get('country', ''),
         'status': 'success' if is_successful else 'error'
@@ -681,13 +681,13 @@ def format_portfolio_metrics(metrics, response_format='YAS'):
     if not metrics:
         return {}
     
-    # YAS portfolio metrics - essential only
+    # YAS portfolio metrics - raw numeric values for full precision  
     yas_metrics = {
-        'portfolio_yield': f"{metrics.get('portfolio_yield', 0):.2f}%",
-        'portfolio_duration': f"{metrics.get('portfolio_duration', 0):.1f} years",
-        'portfolio_spread': f"{metrics.get('portfolio_spread', 0):.0f} bps",
+        'portfolio_yield': float(metrics.get('portfolio_yield', 0)),  # Raw number
+        'portfolio_duration': float(metrics.get('portfolio_duration', 0)),  # Raw number
+        'portfolio_spread': float(metrics.get('portfolio_spread', 0)),  # Raw number
         'total_bonds': metrics.get('total_bonds', 0),
-        'success_rate': f"{metrics.get('success_rate', 0):.1f}%"
+        'success_rate': float(metrics.get('success_rate', 0))  # Raw number
     }
     
     return yas_metrics
