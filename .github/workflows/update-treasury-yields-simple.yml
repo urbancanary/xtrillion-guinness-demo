@@ -38,14 +38,13 @@ jobs:
     - name: Update Treasury yields
       run: |
         python us_treasury_yield_fetcher.py
-      working-directory: ./google_analysis10
       env:
-        PYTHONPATH: ${{ github.workspace }}/google_analysis10
+        PYTHONPATH: ${{ github.workspace }}
     
     - name: Check for changes
       id: check_changes
       run: |
-        if git diff --quiet google_analysis10/bonds_data.db; then
+        if git diff --quiet bonds_data.db; then
           echo "changed=false" >> $GITHUB_OUTPUT
         else
           echo "changed=true" >> $GITHUB_OUTPUT
@@ -57,7 +56,7 @@ jobs:
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
-        git add google_analysis10/bonds_data.db
+        git add bonds_data.db
         git commit -m "🏦 Update Treasury yields for $(date +%Y-%m-%d)
         
         Automated daily update of Treasury yield curve data
