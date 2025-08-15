@@ -1,0 +1,54 @@
+{
+  "analytics": {
+    "accrued_interest": 1.3839779005524913,
+    "annual_duration": 15.871346,
+    "annual_macaulay_duration": 16.65902,
+    "clean_price": 71.66,
+    "convexity": 367.19995073823986,
+    "dirty_price": 73.043978,
+    "duration": 16.260414346157688,
+    "macaulay_duration": 16.65902,
+    "price": 71.66,
+    "pvbp": 0.116522129204566,
+    "settlement_date": "2025-08-01",
+    "spread": 9.277957916259805,
+    "ytm": 4.902779579162598,
+    "ytm_annual": 4.962873,
+    "z_spread": 3.755931209330047
+  },
+  "bond": {
+    "conventions": {
+      "business_day_convention": "Following",
+      "day_count": "ActualActual.Bond",
+      "end_of_month": true,
+      "fixed_business_convention": "Unadjusted",
+      "frequency": "Semiannual"
+    },
+    "description": "T 3 15/08/52",
+    "isin": null,
+    "route_used": "parse_hierarchy"
+  },
+  "calculations": {
+    "basis": "Semi-annual compounding",
+    "business_day_convention": "Following",
+    "day_count": "ActualActual.Bond"
+  },
+  "field_descriptions": {
+    "annual_duration": "Modified duration (annual)",
+    "convexity": "Price convexity (semi-annual)",
+    "duration": "Modified duration (years)",
+    "macaulay_duration": "Macaulay duration (semi-annual)",
+    "pvbp": "Price Value of Basis Point",
+    "ytm": "Yield to maturity (bond native convention, %)",
+    "ytm_annual": "Yield to maturity (annual equivalent, %)",
+    "z_spread": "Z-spread over treasury curve (bps)"
+  },
+  "metadata": {
+    "api_version": "v1.2",
+    "calculation_engine": "xtrillion_core_quantlib_engine",
+    "enhanced_metrics_count": 13,
+    "route_used": "parse_hierarchy",
+    "universal_parser_available": true
+  },
+  "status": "success"
+}

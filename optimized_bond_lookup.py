@@ -117,7 +117,7 @@ class OptimizedBondLookup:
             # Look for ISIN in validated bonds table (using correct column names)
             cursor.execute("""
                 SELECT isin, description, coupon, maturity, 
-                       fixed_day_count, fixed_business_convention, fixed_frequency,
+                       day_count, business_convention, frequency,
                        bloomberg_accrued, quantlib_accrued, difference,
                        pass_status, validation_date
                 FROM validated_quantlib_bonds 
@@ -132,9 +132,9 @@ class OptimizedBondLookup:
                     'coupon': row['coupon'],
                     'maturity': row['maturity'],
                     'conventions': {
-                        'day_count': row['fixed_day_count'],
-                        'fixed_frequency': row['fixed_frequency'],
-                        'business_day_convention': row['fixed_business_convention'],
+                        'day_count': row['day_count'],
+                        'frequency': row['frequency'],
+                        'business_day_convention': row['business_convention'],
                         'end_of_month': True  # Default for most bonds
                     },
                     'bloomberg_accrued': row['bloomberg_accrued'],
@@ -162,7 +162,7 @@ class OptimizedBondLookup:
             'description': description,
             'conventions': {
                 'day_count': 'parsed_from_description',
-                'fixed_frequency': 'parsed_from_description',
+                'frequency': 'parsed_from_description',
                 'business_day_convention': 'parsed_from_description'
             },
             'data_quality': 'parsed'

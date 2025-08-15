@@ -40,6 +40,7 @@ class USTreasuryYieldFetcher:
         )
         
         # Mapping of Treasury tenors to our database columns
+        # Note: We skip 1.5 Mo and 4 Mo as our database doesn't have columns for them
         self.tenor_mapping = {
             '1 Mo': 'M1M',
             '2 Mo': 'M2M', 
@@ -156,9 +157,15 @@ class USTreasuryYieldFetcher:
                 
                 # Map columns to our tenor codes
                 for col in df.columns[1:]:  # Skip date column
-                    if col in self.tenor_mapping:
+                    # Clean column name (remove extra spaces)
+                    col_clean = col.strip()
+                    
+                    # Only process columns we have mappings for
+                    if col_clean in self.tenor_mapping:
                         try:
-                            yields[self.tenor_mapping[col]] = float(row[col])
+                            value = float(row[col])
+                            if not pd.isna(value):
+                                yields[self.tenor_mapping[col_clean]] = value
                         except:
                             continue
                 

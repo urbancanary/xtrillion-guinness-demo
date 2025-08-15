@@ -34,6 +34,9 @@ from google_analysis10 import process_bond_portfolio
 # 🎯 BREAKTHROUGH: Import centralized sophisticated date parser - FIXES ALL DATE BUGS!
 from centralized_bond_date_parser import parse_bond_date_simple, parse_bond_date
 
+# Import ISIN lookup functionality
+from isin_lookup import lookup_isin_in_database, get_isin_error_response
+
 def get_prior_month_end():
     """
     Get the last day of the previous month for institutional settlement
@@ -172,7 +175,8 @@ def calculate_bond_master(
     db_path: str = './bonds_data.db',
     validated_db_path: str = './validated_quantlib_bonds.db',
     bloomberg_db_path: str = './bloomberg_index.db',
-    calc_flags=None  # NEW: Profile-based field filtering
+    calc_flags=None,  # NEW: Profile-based field filtering
+    overrides: Optional[Dict[str, Any]] = None  # NEW: Override specific bond parameters
 ) -> Dict[str, Any]:
     """
     🎯 ENHANCED MASTER BOND CALCULATION FUNCTION
@@ -223,16 +227,82 @@ def calculate_bond_master(
     # Route 1: ISIN Hierarchy (when ISIN provided)
     if isin:
         logger.info(f"📍 Route 1: ISIN Hierarchy - {isin}")
-        bond_data['isin'] = isin  # ✅ FIXED: Use correct field name
-        # 🔧 FIX: Also provide ISIN as description for fallback parsing
-        if not description or description == "None":
-            bond_data['description'] = isin  # Allow ISIN to be parsed as fallback
+        
+        # Try to lookup ISIN in database first
+        isin_lookup_result = lookup_isin_in_database(isin, db_path, validated_db_path, bloomberg_db_path)
+        
+        if isin_lookup_result:
+            # Found ISIN in database - use the retrieved details
+            logger.info(f"✅ ISIN found in {isin_lookup_result.get('database')} database")
+            
+            # Use ALL bond details from database
+            bond_data['isin'] = isin
+            bond_data['description'] = isin_lookup_result.get('description')
+            bond_data['database_source'] = isin_lookup_result.get('database')
+            bond_data['from_database'] = True
+            
+            # Add bond-specific details for calculation
+            if isin_lookup_result.get('coupon') is not None:
+                bond_data['coupon'] = isin_lookup_result.get('coupon')
+            if isin_lookup_result.get('maturity'):
+                bond_data['maturity'] = isin_lookup_result.get('maturity')
+            if isin_lookup_result.get('issuer'):
+                bond_data['issuer'] = isin_lookup_result.get('issuer')
+            if isin_lookup_result.get('day_count'):
+                bond_data['day_count'] = isin_lookup_result.get('day_count')
+            if isin_lookup_result.get('frequency'):
+                bond_data['frequency'] = isin_lookup_result.get('frequency')
+            if isin_lookup_result.get('business_convention'):
+                bond_data['business_convention'] = isin_lookup_result.get('business_convention')
+                
+            logger.info(f"📝 Using full bond details from database")
+            logger.info(f"   Description: {bond_data.get('description')}")
+            logger.info(f"   Coupon: {bond_data.get('coupon')}")
+            logger.info(f"   Maturity: {bond_data.get('maturity')}")
+            
+        elif description and description != "None":
+            # ISIN not found but description provided - continue with description
+            logger.warning(f"⚠️ ISIN {isin} not found in database, using provided description")
+            bond_data['isin'] = isin
+            bond_data['isin_lookup_failed'] = True
+            bond_data['isin_fallback_note'] = f"ISIN {isin} not found in database. Calculation performed using provided description instead."
+            
+        else:
+            # ISIN not found and no description provided - return error
+            logger.error(f"❌ ISIN {isin} not found and no description provided")
+            error_response = get_isin_error_response(isin, description)
+            error_response['route_used'] = 'isin_hierarchy'
+            error_response['success'] = False
+            return error_response
+            
         route_used = "isin_hierarchy"
     
     # Route 2: Parse Hierarchy (when no ISIN)  
     else:
         logger.info(f"📖 Route 2: Parse Hierarchy - '{description}'")
         route_used = "parse_hierarchy"
+    
+    # Apply overrides if provided
+    if overrides:
+        logger.info(f"📝 Applying overrides: {list(overrides.keys())}")
+        
+        # Define allowed override fields (limit to prevent complex data)
+        allowed_overrides = {
+            'coupon', 'maturity', 'day_count', 'frequency', 
+            'business_convention', 'issuer', 'currency', 'face_value',
+            'end_of_month', 'first_coupon_date', 'issue_date'
+        }
+        
+        # Apply only allowed overrides
+        for field, value in overrides.items():
+            if field in allowed_overrides:
+                bond_data[field] = value
+                logger.info(f"   ✅ Override applied: {field} = {value}")
+            else:
+                logger.warning(f"   ⚠️ Override ignored (not allowed): {field}")
+        
+        # Add override note to response
+        bond_data['overrides_applied'] = {k: v for k, v in overrides.items() if k in allowed_overrides}
     
     # Add weighting (required by current API)
     bond_data['WEIGHTING'] = 1.0
@@ -293,6 +363,19 @@ def calculate_bond_master(
             'calculation_method': 'xtrillion_core',
             'settlement_date': result.get('settlement_date_str') or settlement_date
         }
+        
+        # Add ISIN lookup note if applicable
+        if bond_data.get('isin_lookup_failed'):
+            success_result['note'] = bond_data.get('isin_fallback_note')
+            success_result['isin_lookup_status'] = 'not_found_used_description'
+        elif bond_data.get('database_source'):
+            success_result['isin_lookup_status'] = 'found'
+            success_result['database_source'] = bond_data.get('database_source')
+        
+        # Add override information if applicable
+        if bond_data.get('overrides_applied'):
+            success_result['overrides_applied'] = bond_data.get('overrides_applied')
+            success_result['override_note'] = f"Calculation performed with {len(bond_data['overrides_applied'])} parameter override(s)"
         
         # 🚀 PHASE 1 ENHANCEMENT: Add 6 new outputs
         # 🚀 PROFILE-AWARE ENHANCEMENT: Add outputs based on calc_flags

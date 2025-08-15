@@ -7,7 +7,7 @@ runtime: python311
 service: development
 
 # Development entrypoint with debug capabilities
-entrypoint: gunicorn --bind :$PORT --workers 1 --threads 2 --timeout 120 --reload google_analysis10_api:app
+entrypoint: gunicorn --bind :$PORT --workers 1 --threads 2 --timeout 120 --reload google_analysis10_api_dev:app
 
 env_variables:
   PORT: 8080

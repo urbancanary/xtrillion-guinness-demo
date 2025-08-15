@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 def add_cash_flow_endpoints(app: Flask):
     """Add ENHANCED cash flow endpoints with filtering to existing Flask app"""
     
-    @app.route('/v1/bond/cashflow', methods=['POST'])
+    @app.route('/api/v1/bond/cashflow', methods=['POST'])
     def calculate_cash_flows():
         """Calculate bond cash flows with ADVANCED filtering capabilities"""
         try:
@@ -111,7 +111,7 @@ def add_cash_flow_endpoints(app: Flask):
             logger.error(f"Unexpected error: {e}")
             return jsonify({"error": "Internal server error", "status": "error", "timestamp": datetime.now().isoformat()}), 500
     
-    @app.route('/v1/bond/cashflow/next', methods=['POST'])
+    @app.route('/api/v1/bond/cashflow/next', methods=['POST'])
     def calculate_next_cash_flow():
         """Convenience endpoint for NEXT cash flow only"""
         try:
@@ -147,7 +147,7 @@ def add_cash_flow_endpoints(app: Flask):
             logger.error(f"Error in next cash flow endpoint: {e}")
             return jsonify({"error": "Internal server error", "status": "error"}), 500
     
-    @app.route('/v1/bond/cashflow/period/<int:days>', methods=['POST'])
+    @app.route('/api/v1/bond/cashflow/period/<int:days>', methods=['POST'])
     def calculate_period_cash_flow(days):
         """Convenience endpoint for PERIOD filtering"""
         try:

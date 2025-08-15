@@ -62,6 +62,8 @@ test_run.log
 *.p12
 *secrets*
 *credentials*
+.email_config.json
+email_credentials.json
 
 # Database files (exclude real data, keep structure)
 *.db

@@ -401,9 +401,9 @@ class UniversalBondParser:
             'issuer': ['issuer', 'company_name', 'name', 'bond_name', 'NAME'],
             'coupon_rate': ['coupon', 'coupon_rate', 'rate', 'cpn', 'CPN', 'Coupon'],
             'maturity_date': ['maturity', 'maturity_date', 'mat_date', 'expiry', 'MATURITY', 'Maturity'],
-            'day_count': ['fixed_day_count', 'day_count', 'day_count_convention', 'dcc'],
-            'frequency': ['fixed_frequency', 'frequency', 'payment_frequency', 'freq'],
-            'business_convention': ['fixed_business_convention', 'business_convention', 'bus_conv'],
+            'day_count': ['day_count', 'day_count_convention', 'dcc'],
+            'frequency': ['frequency', 'payment_frequency', 'freq'],
+            'business_convention': ['business_convention', 'bus_conv'],
             'currency': ['currency', 'crncy', 'curr', 'CRNCY', 'ccy'],
             'country': ['country', 'country_iso', 'cntry'],
             'description': ['description', 'Description', 'bond_description', 'desc']

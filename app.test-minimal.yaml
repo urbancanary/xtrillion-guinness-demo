@@ -1,0 +1,3 @@
+runtime: python311
+service: test-minimal
+entrypoint: gunicorn --bind :$PORT google_analysis10_api:app

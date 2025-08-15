@@ -1,0 +1,51 @@
+# Google Analysis 10 - RMB Development Environment
+# Andy's experimental environment for rapid development
+# Breaking changes and experiments allowed
+
+runtime: python311
+
+# RMB development service
+service: rmb-dev
+
+# Development entrypoint with reload for rapid iteration
+entrypoint: gunicorn --bind :$PORT --workers 1 --threads 2 --timeout 120 --reload google_analysis10_api_dev:app
+
+env_variables:
+  PORT: 8080
+  ENVIRONMENT: rmb-dev
+  DATABASE_SOURCE: gcs
+  PYTHONPATH: /srv
+  VERSION: "rmb-dev"
+  API_VERSION: "v1-experimental"
+  EXTERNAL_USERS: "false"
+  DEBUG: "true"
+  FLASK_DEBUG: "true"
+  ALLOW_EXPERIMENTAL: "true"
+
+# Minimal scaling for cost efficiency
+automatic_scaling:
+  min_instances: 0  # Scale to zero when not in use
+  max_instances: 2  # Low max for dev
+  target_cpu_utilization: 0.8
+
+# Standard resources for development
+resources:
+  cpu: 1
+  memory_gb: 4
+
+# Relaxed health checks for development
+readiness_check:
+  path: "/health"
+  check_interval_sec: 10
+  timeout_sec: 8
+  failure_threshold: 3
+  success_threshold: 1
+
+liveness_check:
+  path: "/health"
+  check_interval_sec: 60
+  timeout_sec: 8
+  failure_threshold: 5
+  success_threshold: 1
+
+# Note: No skip_files - use .gcloudignore instead

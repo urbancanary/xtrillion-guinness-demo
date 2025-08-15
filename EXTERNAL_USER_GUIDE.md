@@ -188,9 +188,8 @@ curl -X POST "https://future-footing-414610.uc.r.appspot.com/api/v1/portfolio/an
 - **Status Page**: https://future-footing-414610.uc.r.appspot.com/health
 
 ### **Contact**
-- **Email**: [Your support email]
-- **Response Time**: <24 hours for critical issues
-- **Support Hours**: Business days, GMT timezone
+- **API Documentation**: Available at base URL /docs endpoint
+- **Service Status**: Check /health endpoint for system status
 
 ### **Issue Reporting**
 If you encounter any issues:

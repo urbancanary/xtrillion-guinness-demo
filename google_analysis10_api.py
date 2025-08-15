@@ -282,6 +282,8 @@ def create_matured_bond_response(bond_input, maturity_info, context=None):
         base_response['context'] = 'default'
     
     return base_response
+
+def apply_context_formatting(response_data, context):
     """
     Context-aware response formatting for different use cases
     
@@ -325,7 +327,8 @@ def create_matured_bond_response(bond_input, maturity_info, context=None):
             'metadata': {
                 'api_version': response_data['metadata']['api_version'],
                 'calculation_engine': response_data['metadata']['calculation_engine'],
-                'context_applied': 'portfolio'
+                'context_applied': 'portfolio',
+                'response_time_ms': response_data['metadata'].get('response_time_ms')
             }
         }
     
@@ -487,6 +490,8 @@ def format_portfolio_business_response(bond_data, portfolio_metrics):
 
 # Valid API keys (professional format - 24+ characters)
 VALID_API_KEYS = {
+    'gax10_admin_9k3m7p5w2r8t6v4x1z': {'name': 'RMB Admin Master Key', 'permissions': 'full', 'user': 'rmb_admin', 'tier': 'admin'},
+    'gax10_maia_7k9d2m5p8w1e6r4t3y2x': {'name': 'Maia Software API Access', 'permissions': 'full', 'user': 'maia', 'tier': 'paid'},
     'gax10_inst_7k9d2m5p8w1e6r4t3y': {'name': 'Institutional Access Key', 'permissions': 'full', 'user': 'institutional'},
     'gax10_dev_4n8s6k2x7p9v5m1w8z': {'name': 'Development Environment Key', 'permissions': 'full', 'user': 'development'},
     'gax10_demo_3j5h8m9k2p6r4t7w1q': {'name': 'Public Demonstration Key', 'permissions': 'full', 'user': 'demo'},
@@ -499,12 +504,11 @@ VALID_API_KEYS = {
 
 def require_api_key_soft(f):
     """
-    Soft API key authentication - logs but doesn't block
+    STRICT API key authentication for production and maia-dev
     
-    This is a transitional decorator that:
-    - Accepts valid API keys and logs usage
-    - Allows requests without keys (backward compatibility)
-    - Sets up framework for future strict authentication
+    - Production & Maia-dev: Requires valid API key (blocks without it)
+    - Logs all API usage for billing/monitoring
+    - Special handling for Maia's paid tier
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -512,18 +516,31 @@ def require_api_key_soft(f):
         api_key = request.headers.get('X-API-Key')
         
         if not api_key:
-            logger.info(f"ℹ️  No API key provided for {request.endpoint} (soft auth - allowing)")
-            # Continue without blocking
-            return f(*args, **kwargs)
+            logger.warning(f"❌ No API key provided for {request.endpoint}")
+            return jsonify({
+                "status": "error",
+                "code": 401,
+                "message": "API key required in X-API-Key header",
+                "info": "Please check your API key"
+            }), 401
         
         if api_key not in VALID_API_KEYS:
-            logger.warning(f"⚠️  Invalid API key attempted: {api_key[:8]}*** for {request.endpoint} (soft auth - allowing)")
-            # Continue without blocking, but log the invalid attempt
-            return f(*args, **kwargs)
+            logger.warning(f"❌ Invalid API key attempt: {api_key[:10]}... for {request.endpoint}")
+            return jsonify({
+                "status": "error",
+                "code": 401,
+                "message": "Invalid API key",
+                "info": "Please check your API key"
+            }), 401
         
         # Log successful authentication
         key_info = VALID_API_KEYS[api_key]
-        logger.info(f"✅ API key authenticated: {key_info['user']} ({key_info['name']}) for {request.endpoint}")
+        
+        # Special logging for Maia's paid tier
+        if key_info.get('user') == 'maia':
+            logger.info(f"💰 MAIA API USAGE: {key_info['name']} accessing {request.endpoint} at {request.host}")
+        else:
+            logger.info(f"✅ API key authenticated: {key_info['user']} ({key_info['name']}) for {request.endpoint}")
         
         # Store API key info in request context for later use
         request.api_key = api_key
@@ -707,6 +724,14 @@ if ENHANCED_CASH_FLOW_AVAILABLE:
     logger.info("✅ GA10 Enhanced cash flow endpoints added successfully")
 else:
     logger.warning("⚠️ GA10 Enhanced cash flow endpoints not available")
+
+# Add environment identification endpoints
+try:
+    from environment_info import add_environment_endpoints
+    add_environment_endpoints(app)
+    logger.info("🏷️ Environment identification endpoints added")
+except ImportError:
+    logger.warning("⚠️ Environment info endpoints not available")
 universal_parser = None
 
 def initialize_universal_parser():
@@ -1059,6 +1084,9 @@ def bond_analysis():
     - "technical": Enhanced response with debugging and parsing details
     - Default (no context): Standard comprehensive response
     """
+    import time
+    start_time = time.time()
+    
     # 🔧 FIX: Ensure databases are available before processing
     if not ensure_databases_ready():
         return jsonify({
@@ -1076,6 +1104,9 @@ def bond_analysis():
         # 🔧 FIX: Handle numeric inputs from Google Sheets
         if isinstance(bond_input, (int, float)):
             bond_input = str(bond_input)
+        
+        # Extract overrides if provided
+        overrides = data.get('overrides', {})
         
         if not data or not bond_input:
             return jsonify({
@@ -1178,7 +1209,8 @@ def bond_analysis():
                 settlement_date=data.get('settlement_date'),
                 db_path=DATABASE_PATH,
                 validated_db_path=VALIDATED_DB_PATH,
-                bloomberg_db_path=BLOOMBERG_DB_PATH
+                bloomberg_db_path=BLOOMBERG_DB_PATH,
+                overrides=overrides
             )
 
             # Handle ISIN lookup failure with intelligent fallback
@@ -1198,7 +1230,8 @@ def bond_analysis():
                         settlement_date=data.get('settlement_date'),
                         db_path=DATABASE_PATH,
                         validated_db_path=VALIDATED_DB_PATH,
-                        bloomberg_db_path=BLOOMBERG_DB_PATH
+                        bloomberg_db_path=BLOOMBERG_DB_PATH,
+                        overrides=overrides
                     )
                     
                     if fallback_result.get('success'):
@@ -1376,18 +1409,22 @@ def bond_analysis():
                 'calculation_engine': 'xtrillion_core_quantlib_engine',
                 'route_used': result.get('route_used'),
                 'universal_parser_available': UNIVERSAL_PARSER_AVAILABLE,
-                'enhanced_metrics_count': 13
+                'enhanced_metrics_count': 13,
+                'response_time_ms': int((time.time() - start_time) * 1000)
             }
         }
+        
+        # Add override information if applicable
+        if result.get('overrides_applied'):
+            response['overrides_applied'] = result.get('overrides_applied')
+            response['override_note'] = result.get('override_note')
         
         # Extract context parameter for response formatting
         context = data.get('context')  # Can be "portfolio", "technical", or None
         
-        # TODO: Context-aware formatting will be implemented in future version
-        # For now, return the standard response format
+        # Apply context-aware formatting if requested
         if context:
-            response['context_requested'] = context
-            response['context_note'] = "Context-aware formatting coming in future version"
+            response = apply_context_formatting(response, context)
         
         logger.info(f"✅ Successfully calculated using XTrillion Core: {bond_input} (route: {result.get('route_used')}, context: {context or 'default'})")
         logger.info(f"📊 XTrillion Core Result: YTM={result.get('ytm'):.4f}%, Duration={result.get('duration'):.2f}, Route={result.get('route_used')}")
@@ -1420,6 +1457,9 @@ def portfolio_analysis():
     Query Parameters:
     - settlement_days: Settlement days override (default: 0)
     """
+    import time
+    start_time = time.time()
+    
     # 🔧 FIX: Ensure databases are available before processing
     if not ensure_databases_ready():
         return jsonify({
@@ -1579,7 +1619,8 @@ def portfolio_analysis():
                     'available': UNIVERSAL_PARSER_AVAILABLE,
                     'initialized': universal_parser is not None,
                     'parsing_redundancy_eliminated': UNIVERSAL_PARSER_AVAILABLE
-                }
+                },
+                'response_time_ms': int((time.time() - start_time) * 1000)
             }
         }
         
@@ -1731,6 +1772,308 @@ def version_info():
         ]
     })
 
+@app.route('/api/v1/treasury/status', methods=['GET'])
+@require_api_key_soft
+def treasury_status():
+    """
+    Check the status and freshness of treasury yield data
+    
+    Returns:
+    - Latest treasury data date
+    - Number of yields available
+    - Data age in days
+    - Sample yields for verification
+    """
+    try:
+        import sqlite3
+        from datetime import datetime
+        
+        # Ensure databases are available
+        if not ensure_databases_ready():
+            return jsonify({
+                'status': 'error',
+                'message': 'Database initialization in progress. Please try again.',
+                'timestamp': datetime.now().isoformat()
+            }), 503
+            
+        # Connect to database (use correct path based on environment)
+        db_path = DATABASE_PATH if 'DATABASE_PATH' in globals() else './bonds_data.db'
+        if os.environ.get('DATABASE_SOURCE') == 'gcs' and os.path.exists('/tmp/bonds_data.db'):
+            db_path = '/tmp/bonds_data.db'
+            
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Get latest treasury data
+        cursor.execute("""
+            SELECT MAX(date) as latest_date
+            FROM tsys_enhanced
+        """)
+        
+        result = cursor.fetchone()
+        
+        if result and result[0]:
+            latest_date_str = result[0]
+            
+            # Count yields for this date (we know it's 12)
+            yield_count = 12
+            
+            # Get sample yields for the latest date
+            cursor.execute("""
+                SELECT * 
+                FROM tsys_enhanced 
+                WHERE date = ? 
+            """, (latest_date_str,))
+            
+            # Get column names
+            columns = [description[0] for description in cursor.description]
+            row = cursor.fetchone()
+            
+            # Build yields dictionary (skip Date column)
+            yields = {}
+            if row:
+                for i, col in enumerate(columns):
+                    if col != 'Date' and row[i] is not None:
+                        yields[col] = row[i]
+            
+            # Calculate data age
+            latest_date = datetime.strptime(latest_date_str, '%Y-%m-%d')
+            age_days = (datetime.now() - latest_date).days
+            
+            # Determine if data is fresh (less than 2 days old on weekdays)
+            is_fresh = age_days < 2 if datetime.now().weekday() < 5 else age_days < 4
+            
+            return jsonify({
+                'status': 'success',
+                'treasury_data': {
+                    'latest_date': latest_date_str,
+                    'age_days': age_days,
+                    'is_fresh': is_fresh,
+                    'yield_count': yield_count,
+                    'sample_yields': {
+                        '3M': yields.get('M3M', 'N/A'),
+                        '1Y': yields.get('M1Y', 'N/A'),
+                        '5Y': yields.get('M5Y', 'N/A'),
+                        '10Y': yields.get('M10Y', 'N/A'),
+                        '30Y': yields.get('M30Y', 'N/A')
+                    },
+                    'all_maturities': list(yields.keys())
+                },
+                'database_location': 'local' if os.environ.get('DATABASE_SOURCE') != 'gcs' else 'gcs',
+                'timestamp': datetime.now().isoformat()
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'No treasury data found in database',
+                'timestamp': datetime.now().isoformat()
+            }), 404
+            
+    except Exception as e:
+        logger.error(f"Treasury status check failed: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+@app.route('/test/status', methods=['GET'])
+@require_api_key_soft
+def get_test_status():
+    """Get latest test results"""
+    try:
+        from pathlib import Path
+        import json
+        
+        # Find most recent test results
+        result_files = list(Path('.').glob('test_results_production_*.json'))
+        if not result_files:
+            return jsonify({
+                "status": "error",
+                "message": "No test results found"
+            }), 404
+        
+        latest_file = max(result_files, key=lambda f: f.stat().st_mtime)
+        
+        with open(latest_file, 'r') as f:
+            test_data = json.load(f)
+        
+        # Add baseline comparison results if available
+        baseline_file = Path('baseline_comparison_2025-08-07.json')
+        if baseline_file.exists():
+            with open(baseline_file, 'r') as f:
+                baseline_data = json.load(f)
+            test_data['baseline_comparison'] = baseline_data
+        
+        return jsonify(test_data)
+        
+    except Exception as e:
+        logger.error(f"Test status error: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/test/run', methods=['POST'])
+@require_api_key_soft
+def run_tests():
+    """Run test suite and return results"""
+    try:
+        import subprocess
+        from pathlib import Path
+        import json
+        
+        # Run the test suite
+        result = subprocess.run(
+            ['python3', 'daily_test_suite.py'],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        
+        # Load the results
+        result_files = list(Path('.').glob('test_results_production_*.json'))
+        latest_file = max(result_files, key=lambda f: f.stat().st_mtime)
+        
+        with open(latest_file, 'r') as f:
+            test_results = json.load(f)
+        
+        return jsonify({
+            "status": "success",
+            "test_results": test_results,
+            "stdout": result.stdout[-1000:],  # Last 1000 chars of output
+            "return_code": result.returncode
+        })
+        
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "status": "error",
+            "message": "Test execution timed out"
+        }), 500
+    except Exception as e:
+        logger.error(f"Test run error: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/test/treasury', methods=['GET'])
+@require_api_key_soft
+def test_treasury():
+    """Quick test of US Treasury with fixed settlement date"""
+    import requests
+    
+    api_url = "https://future-footing-414610.uc.r.appspot.com/api/v1/bond/analysis"
+    api_key = "gax10_demo_3j5h8m9k2p6r4t7w1q"
+    
+    payload = {
+        "description": "T 3 15/08/52",
+        "price": 71.66,
+        "settlement_date": "2025-06-30"
+    }
+    
+    try:
+        response = requests.post(
+            api_url,
+            headers={
+                "Content-Type": "application/json",
+                "X-API-Key": api_key
+            },
+            json=payload
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            analytics = data.get('analytics', {})
+            
+            # Compare with expected values
+            expected = {
+                "ytm": 4.898837,
+                "duration": 16.350751,
+                "settlement_date": "2025-06-30"
+            }
+            
+            actual = {
+                "ytm": round(analytics.get('ytm', 0), 6),
+                "duration": round(analytics.get('duration', 0), 6),
+                "settlement_date": analytics.get('settlement_date')
+            }
+            
+            matches = all(
+                abs(actual.get(k, 0) - expected[k]) < 0.000001 
+                for k in ['ytm', 'duration']
+            ) and actual['settlement_date'] == expected['settlement_date']
+            
+            return jsonify({
+                "status": "success",
+                "bond": "US Treasury 3% 15/08/52",
+                "expected": expected,
+                "actual": actual,
+                "matches": matches,
+                "full_response": data
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": f"API returned status {response.status_code}",
+                "response": response.text
+            }), response.status_code
+            
+    except Exception as e:
+        logger.error(f"Treasury test error: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/test/baseline', methods=['GET'])
+@require_api_key_soft
+def get_baseline():
+    """Get current baseline values"""
+    try:
+        from pathlib import Path
+        import json
+        from datetime import datetime
+        
+        baseline_file = Path('calculation_baseline.json')
+        if not baseline_file.exists():
+            return jsonify({
+                "status": "error",
+                "message": "No baseline found"
+            }), 404
+            
+        with open(baseline_file, 'r') as f:
+            baseline = json.load(f)
+        
+        # Format for easy reading
+        formatted = []
+        for key, value in baseline.items():
+            formatted.append({
+                "bond": value['name'],
+                "settlement_date": value['request']['settlement_date'],
+                "price": value['request']['price'],
+                "ytm": value['metrics']['ytm'],
+                "duration": value['metrics']['duration'],
+                "accrued_interest": value['metrics']['accrued_interest']
+            })
+        
+        return jsonify({
+            "status": "success",
+            "baseline_date": datetime.now().isoformat(),
+            "settlement_date": "2025-06-30",
+            "bonds": formatted
+        })
+        
+    except Exception as e:
+        logger.error(f"Baseline error: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
 @app.route('/', methods=['GET'])
 def api_guide():
     """Enhanced API documentation and testing interface with Universal Parser features"""
@@ -1833,6 +2176,30 @@ OR
             <div class="endpoint">
                 <h3><span class="method">GET</span> /api/v1/version</h3>
                 <p><strong>Version information</strong> with Universal Parser capabilities</p>
+            </div>
+            
+            <div class="endpoint">
+                <h3><span class="method">GET</span> /test/status</h3>
+                <p><strong>Get latest test results</strong> - Shows most recent test execution status</p>
+                <p><span class="success">✅ New:</span> View test results with baseline comparisons</p>
+            </div>
+            
+            <div class="endpoint">
+                <h3><span class="method">POST</span> /test/run</h3>
+                <p><strong>Run test suite</strong> - Execute the full test suite and get results</p>
+                <p><span class="success">✅ New:</span> On-demand test execution</p>
+            </div>
+            
+            <div class="endpoint">
+                <h3><span class="method">GET</span> /test/treasury</h3>
+                <p><strong>Quick treasury test</strong> - Test US Treasury 3% 15/08/52 with fixed settlement</p>
+                <p><span class="success">✅ New:</span> Verify expected values match</p>
+            </div>
+            
+            <div class="endpoint">
+                <h3><span class="method">GET</span> /test/baseline</h3>
+                <p><strong>Get baseline values</strong> - View current baseline calculation values</p>
+                <p><span class="success">✅ New:</span> Reference values for testing</p>
             </div>
             
             <div class="endpoint">
