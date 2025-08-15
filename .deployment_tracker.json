@@ -15,10 +15,78 @@
       "branch": "develop",
       "timestamp": "2025-08-12T18:22:58.349651",
       "status": "failed"
+    },
+    {
+      "environment": "development",
+      "version": "dev-20250812-183015-db7665e",
+      "commit": "db7665e",
+      "branch": "develop",
+      "timestamp": "2025-08-12T18:30:15.966185",
+      "status": "started"
+    },
+    {
+      "environment": "development",
+      "version": "dev-20250812-184905-6cf57d7",
+      "commit": "6cf57d7",
+      "branch": "develop",
+      "timestamp": "2025-08-12T18:49:05.957775",
+      "status": "started"
+    },
+    {
+      "environment": "development",
+      "version": "dev-20250812-184905-6cf57d7",
+      "commit": "6cf57d7",
+      "branch": "develop",
+      "timestamp": "2025-08-12T18:50:55.742125",
+      "status": "success"
+    },
+    {
+      "environment": "development",
+      "version": "dev-20250812-185630-6cf57d7",
+      "commit": "6cf57d7",
+      "branch": "develop",
+      "timestamp": "2025-08-12T18:56:30.689858",
+      "status": "started"
+    },
+    {
+      "environment": "development",
+      "version": "dev-20250812-185630-6cf57d7",
+      "commit": "6cf57d7",
+      "branch": "develop",
+      "timestamp": "2025-08-12T18:58:03.275008",
+      "status": "success"
+    },
+    {
+      "environment": "development",
+      "version": "dev-20250813-164030-6cf57d7",
+      "commit": "6cf57d7",
+      "branch": "develop",
+      "timestamp": "2025-08-13T16:40:31.384241",
+      "status": "started"
+    },
+    {
+      "environment": "development",
+      "version": "dev-20250814-154853-6cf57d7",
+      "commit": "6cf57d7",
+      "branch": "develop",
+      "timestamp": "2025-08-14T15:48:53.740330",
+      "status": "started"
+    },
+    {
+      "environment": "development",
+      "version": "dev-20250814-154853-6cf57d7",
+      "commit": "6cf57d7",
+      "branch": "develop",
+      "timestamp": "2025-08-14T15:50:51.084120",
+      "status": "success"
     }
   ],
   "current_stage": {
-    "development": null,
+    "development": {
+      "version": "dev-20250814-154853-6cf57d7",
+      "commit": "6cf57d7",
+      "timestamp": "2025-08-14T15:50:51.084138"
+    },
     "maia-dev": null,
     "production": null
   },

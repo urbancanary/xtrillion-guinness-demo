@@ -45,15 +45,4 @@ liveness_check:
   failure_threshold: 3
   success_threshold: 2
 
-# Same file exclusions as production
-skip_files:
-- ^(.*/)?#.*#$
-- ^(.*/)?.*~$
-- ^(.*/)?.*\.py[co]$
-- ^(.*/)?.*/RCS/.*$
-- ^(.*/)?\..*$
-- ^(.*/)?.*\.bak$
-- ^(.*/)?test_.*\.py$
-- ^(.*/)?debug_.*\.py$
-- ^(.*/)?archive/.*$
-- ^(.*/)?backups_.*$
+# File exclusion handled by .gcloudignore

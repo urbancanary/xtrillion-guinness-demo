@@ -494,18 +494,22 @@ function XT_SMART(bond_range, price_range, settlement_date, force_refresh, envir
   var bonds = Array.isArray(bond_range) ? bond_range : [[bond_range]];
   var prices = Array.isArray(price_range) ? price_range : [[price_range]];
   
+  // Initialize results array early to prevent undefined errors
+  var needsUpdate = [];
+  var results = [];
+  
   // INTELLIGENT INPUT DETECTION - Key advantage of array functions
   var detectedSettlement = null;
   
   // Check if price_range has multiple columns (price + settlement date)
-  if (prices.length > 0 && prices[0].length >= 2) {
+  if (prices && prices.length > 0 && Array.isArray(prices[0]) && prices[0].length >= 2) {
     // Multi-column input detected: Column 1 = prices, Column 2 = settlement dates
     var priceColumn = [];
     var settlementColumn = [];
     
     for (var i = 0; i < prices.length; i++) {
-      if (prices[i][0]) priceColumn.push(prices[i][0]); // Extract prices from first column
-      if (prices[i][1]) settlementColumn.push(prices[i][1]); // Extract settlement dates from second column
+      if (prices[i] && prices[i][0]) priceColumn.push(prices[i][0]); // Extract prices from first column
+      if (prices[i] && prices[i][1]) settlementColumn.push(prices[i][1]); // Extract settlement dates from second column
     }
     
     prices = priceColumn;
@@ -513,23 +517,24 @@ function XT_SMART(bond_range, price_range, settlement_date, force_refresh, envir
     // Use the first settlement date for all bonds (common case)
     // Or could be enhanced to use individual settlement dates per bond
     if (settlementColumn.length > 0 && settlementColumn[0]) {
-      detectedSettlement = settlementColumn[0];
-      // Debug: Add the detected settlement date to results for troubleshooting
-      results.push(["DEBUG", "Detected Settlement", detectedSettlement, typeof detectedSettlement, "DEBUG", config.name]);
+      // Convert date to ISO format if it's a Date object
+      detectedSettlement = convertToISODate(settlementColumn[0]);
     }
   } else {
     // Single column input - just prices
-    prices = prices.map(function(row) { return row[0]; }).filter(function(p) { return p; });
+    prices = prices.map(function(row) { 
+      return Array.isArray(row) ? row[0] : row; 
+    }).filter(function(p) { return p; });
   }
   
   // Flatten bonds to 1D
-  bonds = bonds.map(function(row) { return row[0]; }).filter(function(b) { return b; });
+  bonds = bonds.map(function(row) { 
+    return Array.isArray(row) ? row[0] : row; 
+  }).filter(function(b) { return b; });
   
   // Use detected settlement date if no explicit one provided
   if (!settlement_date && detectedSettlement) {
     settlement_date = detectedSettlement;
-    // Debug: Show what settlement date will be used
-    results.push(["DEBUG", "Using Settlement", settlement_date, formatSettlementDate(settlement_date), "DEBUG", config.name]);
   }
   
   if (bonds.length !== prices.length) {
@@ -538,63 +543,19 @@ function XT_SMART(bond_range, price_range, settlement_date, force_refresh, envir
   
   var config = getEnvironmentConfig(environment);
   
-  // Get cached results and sanitize to ensure raw numbers
-  var cache = getCachedResults();
-  
-  // Sanitize cached values to ensure they are raw numbers, not formatted strings
-  for (var cacheKey in cache) {
-    var cachedData = cache[cacheKey];
-    if (cachedData.ytm && typeof cachedData.ytm === 'string' && cachedData.ytm.includes('%')) {
-      // Convert percentage string to raw number
-      cachedData.ytm = parseFloat(cachedData.ytm.replace('%', ''));
-    }
-    if (cachedData.duration && typeof cachedData.duration === 'string' && cachedData.duration.includes('years')) {
-      // Convert duration string to raw number
-      cachedData.duration = parseFloat(cachedData.duration.replace(' years', ''));
-    }
-    if (cachedData.spread && typeof cachedData.spread === 'string' && cachedData.spread.includes('bps')) {
-      // Convert spread string to raw number
-      cachedData.spread = parseFloat(cachedData.spread.replace(' bps', ''));
-    }
-  }
-  
-  var needsUpdate = [];
-  var results = [];
-  
   // Add header row  
   results.push(["Bond", "YTM", "Duration", "Spread", "Status", "Environment"]);
   
-  // Check which bonds need updating
+  // REMOVED CACHING - API is fast enough (400ms avg) and caching causes stale data issues
+  // Always fetch fresh data to ensure settlement dates are properly used
   for (var i = 0; i < bonds.length; i++) {
-    var cacheKey = bonds[i] + "_" + prices[i] + "_" + (settlement_date || "default") + "_" + (environment || "production");
-    
-    if (!force_refresh && cache[cacheKey]) {
-      // Use cached value
-      var cachedData = cache[cacheKey];
-      results.push([
-        bonds[i],
-        cachedData.ytm,
-        cachedData.duration,
-        cachedData.spread,
-        "Cached",
-        config.name
-      ]);
-    } else {
-      // Needs update
-      needsUpdate.push({
-        index: i,
-        bond: bonds[i],
-        price: prices[i],
-        cacheKey: cacheKey
-      });
-      // Placeholder row
-      results.push([bonds[i], "Updating...", "Updating...", "Updating...", "New", config.name]);
-    }
-  }
-  
-  // If nothing needs updating, return cached results
-  if (needsUpdate.length === 0) {
-    return results;
+    needsUpdate.push({
+      index: i,
+      bond: bonds[i],
+      price: prices[i]
+    });
+    // Placeholder row
+    results.push([bonds[i], "Calculating...", "Calculating...", "Calculating...", "Live", config.name]);
   }
   
   // Process only bonds that need updating
@@ -1086,6 +1047,317 @@ function XT_CLEAR_CACHE() {
 }
 
 /**
+ * Simple test function to debug Google Sheets input handling
+ * @param {string|Array} bonds Bond descriptions 
+ * @param {number|Array} prices Bond prices
+ * @return {Array} Debug information
+ * @customfunction
+ */
+function XT_TEST_SIMPLE(bonds, prices) {
+  try {
+    var result = [];
+    result.push(["Debug Info", "Value"]);
+    result.push(["Bonds type", typeof bonds]);
+    result.push(["Prices type", typeof prices]);
+    result.push(["Bonds isArray", Array.isArray(bonds)]);
+    result.push(["Prices isArray", Array.isArray(prices)]);
+    
+    if (Array.isArray(bonds) && bonds.length > 0) {
+      result.push(["Bonds length", bonds.length]);
+      result.push(["First bond", bonds[0]]);
+      if (Array.isArray(bonds[0])) {
+        result.push(["First bond isArray", "true"]);
+        result.push(["First bond[0]", bonds[0][0]]);
+      }
+    }
+    
+    if (Array.isArray(prices) && prices.length > 0) {
+      result.push(["Prices length", prices.length]);
+      result.push(["First price", prices[0]]);
+      if (Array.isArray(prices[0])) {
+        result.push(["First price isArray", "true"]);
+        result.push(["First price[0]", prices[0][0]]);
+        if (prices[0].length >= 2) {
+          result.push(["First price[1]", prices[0][1]]);
+        }
+      }
+    }
+    
+    return result;
+  } catch (error) {
+    return [["Error", error.toString()]];
+  }
+}
+
+/**
+ * Ultra simple test function that just returns static data
+ * @return {Array} Static test data
+ * @customfunction
+ */
+function XT_TEST_STATIC() {
+  return [
+    ["Test", "Value"],
+    ["Status", "Working"],
+    ["Number", 123.45],
+    ["Text", "Hello World"]
+  ];
+}
+
+/**
+ * Simplified XT_SMART without caching - always returns fresh data
+ * @param {Array} bonds Bond descriptions
+ * @param {Array} prices Prices and optional settlement dates
+ * @param {string} settlement_date Optional settlement date
+ * @param {boolean} force_refresh Ignored (no caching)
+ * @param {string} environment Environment to use
+ * @return {Array} Bond analytics
+ * @customfunction
+ */
+function XT_SMART_NOCACHE(bonds, prices, settlement_date, force_refresh, environment) {
+  try {
+    // Handle input arrays
+    bonds = Array.isArray(bonds) ? bonds : [[bonds]];
+    prices = Array.isArray(prices) ? prices : [[prices]];
+    
+    // Detect settlement date from multi-column input
+    var detectedSettlement = null;
+    if (prices && prices.length > 0 && Array.isArray(prices[0]) && prices[0].length >= 2) {
+      // Extract prices and settlement dates
+      var priceColumn = [];
+      var settlementColumn = [];
+      
+      for (var i = 0; i < prices.length; i++) {
+        if (prices[i] && prices[i][0]) priceColumn.push(prices[i][0]);
+        if (prices[i] && prices[i][1]) settlementColumn.push(prices[i][1]);
+      }
+      
+      prices = priceColumn;
+      
+      if (settlementColumn.length > 0 && settlementColumn[0]) {
+        detectedSettlement = convertToISODate(settlementColumn[0]);
+      }
+    } else {
+      prices = prices.map(function(row) { 
+        return Array.isArray(row) ? row[0] : row; 
+      }).filter(function(p) { return p; });
+    }
+    
+    // Flatten bonds
+    bonds = bonds.map(function(row) { 
+      return Array.isArray(row) ? row[0] : row; 
+    }).filter(function(b) { return b; });
+    
+    // Use detected settlement if none provided
+    settlement_date = settlement_date || detectedSettlement;
+    
+    if (bonds.length !== prices.length) {
+      return "Bond and price counts must match";
+    }
+    
+    var config = getEnvironmentConfig(environment);
+    
+    // Call API for all bonds - returns raw numeric values
+    var results = processBondBatch(bonds, prices, settlement_date, environment);
+    
+    // Add header and environment info
+    var output = [["Bond", "YTM", "Duration", "Spread", "Environment"]];
+    
+    // Process results - ensure we get raw numeric values
+    if (!results || results.length === 0) {
+      // If no results returned, show error for each bond
+      for (var i = 0; i < bonds.length; i++) {
+        output.push([
+          bonds[i],
+          "API Error",
+          "API Error", 
+          "API Error",
+          config.name
+        ]);
+      }
+    } else {
+      for (var i = 0; i < results.length; i++) {
+        if (results[i] && results[i].length >= 3) {
+          // Extract raw numeric values, removing any formatting
+          var ytm = results[i][0];
+          var duration = results[i][1];
+          var spread = results[i][2];
+          
+          // Clean any formatted strings to raw numbers
+          if (typeof ytm === 'string') {
+            ytm = parseFloat(ytm.replace(/[^0-9.-]/g, ''));
+          }
+          if (typeof duration === 'string') {
+            duration = parseFloat(duration.replace(/[^0-9.-]/g, ''));
+          }
+          if (typeof spread === 'string') {
+            spread = parseFloat(spread.replace(/[^0-9.-]/g, ''));
+          }
+          
+          output.push([
+            bonds[i],
+            ytm,      // Raw number
+            duration, // Raw number
+            spread,   // Raw number
+            config.name
+          ]);
+        } else {
+          // Invalid result structure
+          output.push([
+            bonds[i],
+            "Invalid Data",
+            "Invalid Data",
+            "Invalid Data",
+            config.name
+          ]);
+        }
+      }
+    }
+    
+    return output;
+    
+  } catch (error) {
+    return [["Error", error.toString(), "", "", ""]];
+  }
+}
+
+/**
+ * Debug function to check API response
+ * @param {string} bond Bond description
+ * @param {number} price Bond price
+ * @param {string} environment Environment (production, testing, etc)
+ * @return {Array} Debug information
+ * @customfunction
+ */
+function XT_DEBUG_API(bond, price, environment) {
+  var payload = {
+    "data": [{
+      "description": String(bond),
+      "CLOSING PRICE": Number(price),
+      "WEIGHTING": 1.0
+    }],
+    "metrics": ["ytm", "duration", "spread"]
+  };
+  
+  var options = {
+    "method": "POST",
+    "headers": {
+      "Content-Type": "application/json",
+      "X-API-Key": getApiKey(environment || "production")
+    },
+    "payload": JSON.stringify(payload),
+    "muteHttpExceptions": true
+  };
+  
+  try {
+    var response = UrlFetchApp.fetch(getApiUrl(environment || "production", "/api/v1/portfolio/analysis"), options);
+    var responseText = response.getContentText();
+    var data = JSON.parse(responseText);
+    
+    var result = [];
+    result.push(["Field", "Value"]);
+    result.push(["Response Code", response.getResponseCode()]);
+    result.push(["Has bond_data", data && data.bond_data ? "YES" : "NO"]);
+    
+    if (data && data.bond_data && data.bond_data.length > 0) {
+      var bondData = data.bond_data[0];
+      result.push(["Bond description", bondData.description || "missing"]);
+      result.push(["Yield field", bondData.yield || "missing"]);
+      result.push(["Duration field", bondData.duration || "missing"]);
+      result.push(["Spread field", bondData.spread || "missing"]);
+      result.push(["Yield type", typeof bondData.yield]);
+      result.push(["Duration type", typeof bondData.duration]);
+      result.push(["Spread type", typeof bondData.spread]);
+    }
+    
+    return result;
+  } catch (error) {
+    return [["Error", error.toString()]];
+  }
+}
+
+/**
+ * Test settlement date detection and processing
+ * @param {Array} bonds Bond descriptions 
+ * @param {Array} prices Prices with optional settlement dates
+ * @return {Array} Settlement date processing results
+ * @customfunction
+ */
+function XT_TEST_SETTLEMENT(bonds, prices) {
+  try {
+    var result = [];
+    result.push(["Processing Step", "Result"]);
+    
+    // Step 1: Check multi-column detection
+    if (prices && prices.length > 0 && Array.isArray(prices[0]) && prices[0].length >= 2) {
+      result.push(["Multi-column detected", "YES"]);
+      
+      var priceColumn = [];
+      var settlementColumn = [];
+      
+      for (var i = 0; i < prices.length; i++) {
+        if (prices[i] && prices[i][0]) priceColumn.push(prices[i][0]);
+        if (prices[i] && prices[i][1]) settlementColumn.push(prices[i][1]);
+      }
+      
+      result.push(["Price count", priceColumn.length]);
+      result.push(["Settlement count", settlementColumn.length]);
+      result.push(["First price", priceColumn[0]]);
+      result.push(["First settlement", settlementColumn[0]]);
+      
+      // Test date conversion
+      if (settlementColumn.length > 0 && settlementColumn[0]) {
+        var rawDate = settlementColumn[0];
+        result.push(["Raw date", rawDate]);
+        result.push(["Date type", typeof rawDate]);
+        
+        // Handle Date object
+        if (rawDate instanceof Date) {
+          result.push(["Is Date object", "YES"]);
+          var year = rawDate.getFullYear();
+          var month = ('0' + (rawDate.getMonth() + 1)).slice(-2);
+          var day = ('0' + rawDate.getDate()).slice(-2);
+          var isoDate = year + '-' + month + '-' + day;
+          result.push(["ISO date from Date", isoDate]);
+        }
+        // Handle string date
+        else if (typeof rawDate === 'string' && rawDate.includes('/')) {
+          result.push(["Is Date object", "NO - String"]);
+          var dateParts = rawDate.split('/');
+          if (dateParts.length === 3) {
+            var isoDate = dateParts[2] + '-' + dateParts[1] + '-' + dateParts[0];
+            result.push(["ISO date from string", isoDate]);
+          }
+        }
+        // Handle as object that might have toString
+        else if (typeof rawDate === 'object') {
+          result.push(["Is Date object", "Maybe - checking"]);
+          result.push(["toString value", rawDate.toString()]);
+          // Try to parse as Date
+          try {
+            var dateValue = new Date(rawDate);
+            if (!isNaN(dateValue.getTime())) {
+              var year = dateValue.getFullYear();
+              var month = ('0' + (dateValue.getMonth() + 1)).slice(-2);
+              var day = ('0' + dateValue.getDate()).slice(-2);
+              var isoDate = year + '-' + month + '-' + day;
+              result.push(["ISO date parsed", isoDate]);
+            }
+          } catch(e) {
+            result.push(["Date parse error", e.toString()]);
+          }
+        }
+      }
+    } else {
+      result.push(["Multi-column detected", "NO"]);
+    }
+    
+    return result;
+  } catch (error) {
+    return [["Error", error.toString()]];
+  }
+}
+
+/**
  * Get cache statistics  
  * @customfunction
  */
@@ -1143,40 +1415,51 @@ function XT_TEST_ENV(environment) {
 // HELPER FUNCTIONS
 // ============================================
 
-function formatSettlementDate(settlement_date) {
-  if (!settlement_date) {
-    return null;
+/**
+ * Convert various date formats to ISO string (YYYY-MM-DD)
+ * Handles Date objects, strings, and other formats from Google Sheets
+ */
+function convertToISODate(dateValue) {
+  if (!dateValue) return null;
+  
+  // Handle Date object
+  if (dateValue instanceof Date) {
+    var year = dateValue.getFullYear();
+    var month = ('0' + (dateValue.getMonth() + 1)).slice(-2);
+    var day = ('0' + dateValue.getDate()).slice(-2);
+    return year + '-' + month + '-' + day;
   }
   
-  try {
-    var dateObj;
-    
-    if (settlement_date instanceof Date) {
-      dateObj = settlement_date;
-    } else if (typeof settlement_date === 'string') {
-      var dateStr = settlement_date.trim();
-      if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        return dateStr;
-      }
-      dateObj = new Date(dateStr);
-    } else if (typeof settlement_date === 'number') {
-      var excelEpoch = new Date(1900, 0, 1);
-      dateObj = new Date(excelEpoch.getTime() + (settlement_date - 2) * 24 * 60 * 60 * 1000);
-    } else {
-      return null;
+  // Handle string date in DD/MM/YYYY format
+  if (typeof dateValue === 'string' && dateValue.includes('/')) {
+    var dateParts = dateValue.split('/');
+    if (dateParts.length === 3) {
+      return dateParts[2] + '-' + dateParts[1] + '-' + dateParts[0];
     }
-    
-    if (dateObj && !isNaN(dateObj.getTime())) {
-      var year = dateObj.getFullYear();
-      var month = ('0' + (dateObj.getMonth() + 1)).slice(-2);
-      var day = ('0' + dateObj.getDate()).slice(-2);
-      return year + '-' + month + '-' + day;
-    }
-    
-    return null;
-  } catch (error) {
-    return null;
   }
+  
+  // Handle object that might be a Date
+  if (typeof dateValue === 'object') {
+    try {
+      var parsedDate = new Date(dateValue);
+      if (!isNaN(parsedDate.getTime())) {
+        var year = parsedDate.getFullYear();
+        var month = ('0' + (parsedDate.getMonth() + 1)).slice(-2);
+        var day = ('0' + parsedDate.getDate()).slice(-2);
+        return year + '-' + month + '-' + day;
+      }
+    } catch(e) {
+      // Fall through to return string representation
+    }
+  }
+  
+  // Last resort - return string representation
+  return String(dateValue);
+}
+
+function formatSettlementDate(settlement_date) {
+  // Use the new convertToISODate helper function
+  return convertToISODate(settlement_date);
 }
 
 function callBondAPIOptimized(bond_description, price, settlement_date, metrics, environment) {
@@ -1340,21 +1623,34 @@ function processBondBatch(bonds, prices, settlement_date, environment) {
         var results = [];
         for (var i = 0; i < data.bond_data.length; i++) {
           var bondData = data.bond_data[i];
-          results.push([
-            bonds[i],
-            bondData.yield !== undefined && bondData.yield !== null ? bondData.yield : "N/A",
-            bondData.duration !== undefined && bondData.duration !== null ? bondData.duration : "N/A",
-            bondData.spread !== undefined && bondData.spread !== null ? bondData.spread : 0
-          ]);
+          
+          // Extract raw numeric values, not formatted strings
+          var ytm = bondData.yield !== undefined && bondData.yield !== null ? bondData.yield : 0;
+          var duration = bondData.duration !== undefined && bondData.duration !== null ? bondData.duration : 0;
+          var spread = bondData.spread !== undefined && bondData.spread !== null ? bondData.spread : 0;
+          
+          // Ensure these are numbers, not formatted strings
+          if (typeof ytm === 'string' && ytm.includes('%')) {
+            ytm = parseFloat(ytm.replace('%', ''));
+          }
+          if (typeof duration === 'string' && duration.includes('years')) {
+            duration = parseFloat(duration.replace(' years', ''));
+          }
+          if (typeof spread === 'string' && spread.includes('bps')) {
+            spread = parseFloat(spread.replace(' bps', ''));
+          }
+          
+          // Return just the values, not the bond name
+          results.push([ytm, duration, spread]);
         }
         return results;
       }
     }
   } catch (error) {
-    // Return error results
+    // Return error results with same structure as success case
     var results = [];
     for (var i = 0; i < bonds.length; i++) {
-      results.push([bonds[i], "Error", "Error", "Error"]);
+      results.push([0, 0, 0]);  // Return zeros for errors to maintain structure
     }
     return results;
   }

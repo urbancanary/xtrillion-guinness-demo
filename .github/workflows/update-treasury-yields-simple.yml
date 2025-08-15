@@ -1,0 +1,76 @@
+name: Update Treasury Yields (Simplified)
+
+on:
+  schedule:
+    # 6 PM ET daily (11 PM UTC during EDT, 10 PM UTC during EST)
+    - cron: '0 23 * * 1-5'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  update-yields:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4  # Updated to v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5  # Updated to v5
+      with:
+        python-version: '3.11'
+    
+    - name: Cache pip packages
+      uses: actions/cache@v4  # Updated to v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-treasury-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-treasury-
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pandas
+    
+    - name: Update Treasury yields
+      run: |
+        python us_treasury_yield_fetcher.py
+      working-directory: ./google_analysis10
+      env:
+        PYTHONPATH: ${{ github.workspace }}/google_analysis10
+    
+    - name: Check for changes
+      id: check_changes
+      run: |
+        if git diff --quiet google_analysis10/bonds_data.db; then
+          echo "changed=false" >> $GITHUB_OUTPUT
+        else
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "📊 Treasury yields have been updated"
+        fi
+    
+    - name: Commit and push if changed
+      if: steps.check_changes.outputs.changed == 'true'
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add google_analysis10/bonds_data.db
+        git commit -m "🏦 Update Treasury yields for $(date +%Y-%m-%d)
+        
+        Automated daily update of Treasury yield curve data
+        Source: US Treasury Direct API"
+        git push
+    
+    - name: Summary
+      if: always()
+      run: |
+        if [ "${{ steps.check_changes.outputs.changed }}" == "true" ]; then
+          echo "✅ Treasury yields updated successfully" >> $GITHUB_STEP_SUMMARY
+          echo "Database: bonds_data.db" >> $GITHUB_STEP_SUMMARY
+          echo "Date: $(date +%Y-%m-%d)" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "ℹ️ No changes in Treasury yields today" >> $GITHUB_STEP_SUMMARY
+        fi
