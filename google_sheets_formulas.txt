@@ -1,0 +1,205 @@
+XTRILLION BOND ANALYTICS - GOOGLE SHEETS FORMULAS
+==================================================
+
+COPY THESE FORMULAS DIRECTLY INTO YOUR GOOGLE SHEET
+(After installing the xt_functions_array.gs script)
+
+==================================================
+BASIC ARRAY FORMULAS
+==================================================
+
+1. Process All Bonds (YTM, Duration, Spread):
+=XT_ARRAY(A2:A51, B2:B51)
+
+2. Process All Bonds with Settlement Date:
+=XT_ARRAY(A2:A51, B2:B51, C2)
+
+3. Process All Bonds with Custom Metrics:
+=XT_ARRAY_CUSTOM(A2:A51, B2:B51, "ytm,duration,convexity,pvbp", C2)
+
+4. Dynamic Range (Auto-Detect All Bonds):
+=XT_DYNAMIC("A2")
+
+5. Process with Individual Settlement Dates:
+=XT_ARRAY_WITH_DATES(A2:C51)
+
+==================================================
+PORTFOLIO STATISTICS (Place in Row 55+)
+==================================================
+
+A55: Portfolio Summary
+A56: Total Bonds:
+B56: =COUNTA(A2:A51)
+
+A57: Average YTM (%):
+B57: =AVERAGE(G2:G51)
+
+A58: Average Duration:
+B58: =AVERAGE(H2:H51)
+
+A59: Average Spread (bps):
+B59: =AVERAGE(I2:I51)
+
+A60: Portfolio Weighted YTM:
+B60: =SUMPRODUCT(G2:G51,B2:B51)/SUM(B2:B51)
+
+A61: Portfolio Weighted Duration:
+B61: =SUMPRODUCT(H2:H51,B2:B51)/SUM(B2:B51)
+
+A62: Max YTM:
+B62: =MAX(G2:G51)
+
+A63: Min YTM:
+B63: =MIN(G2:G51)
+
+A64: YTM Standard Dev:
+B64: =STDEV(G2:G51)
+
+A65: Duration Range:
+B65: =MAX(H2:H51)-MIN(H2:H51)
+
+==================================================
+COMPARISON WITH BLOOMBERG (Columns J & K)
+==================================================
+
+J1: YTM Diff
+J2: =IF(ISNUMBER(G2),G2-D2,"")
+(Copy down to J51)
+
+K1: Duration Diff
+K2: =IF(ISNUMBER(H2),H2-E2,"")
+(Copy down to K51)
+
+L1: YTM Match?
+L2: =IF(ABS(J2)<0.1,"✓","✗")
+(Copy down to L51)
+
+M1: Dur Match?
+M2: =IF(ABS(K2)<0.5,"✓","✗")
+(Copy down to M51)
+
+==================================================
+FILTERING & QUERIES
+==================================================
+
+High Yield Bonds (YTM > 6%):
+=QUERY(XT_ARRAY(A2:A51,B2:B51),"SELECT * WHERE Col2 > 6 ORDER BY Col2 DESC",1)
+
+Long Duration Bonds (Duration > 15):
+=QUERY(XT_ARRAY(A2:A51,B2:B51),"SELECT * WHERE Col3 > 15 ORDER BY Col3 DESC",1)
+
+High Spread Bonds (Spread > 200 bps):
+=QUERY(XT_ARRAY(A2:A51,B2:B51),"SELECT * WHERE Col4 > 200 ORDER BY Col4 DESC",1)
+
+==================================================
+INDIVIDUAL BOND LOOKUPS (If Needed)
+==================================================
+
+Single Bond YTM:
+=xt_ytm(A2, B2, C2)
+
+Single Bond Duration:
+=xt_duration(A2, B2, C2)
+
+Single Bond Spread:
+=xt_spread(A2, B2, C2)
+
+Single Bond Accrued Interest:
+=xt_accrued_interest(A2, B2, C2)
+
+Single Bond Convexity:
+=xt_convexity(A2, B2, C2)
+
+==================================================
+ERROR CHECKING FORMULAS
+==================================================
+
+Count Successful Calculations:
+=COUNTIF(G2:G51,">0")
+
+Count Errors:
+=COUNTIF(G2:G51,"Error")
+
+Success Rate:
+=COUNTIF(G2:G51,">0")/COUNTA(A2:A51)
+
+Format as Percentage:
+=TEXT(COUNTIF(G2:G51,">0")/COUNTA(A2:A51),"0.0%")
+
+==================================================
+CONDITIONAL FORMATTING RULES
+==================================================
+
+For YTM Column (G:G):
+- Values > 7: Red background
+- Values 5-7: Yellow background  
+- Values < 5: Green background
+
+For Duration Column (H:H):
+- Values > 15: Red text (high risk)
+- Values 10-15: Orange text
+- Values < 10: Green text
+
+For Spread Column (I:I):
+- Values > 300: Red background
+- Values 100-300: Yellow background
+- Values < 100: Green background
+
+==================================================
+DASHBOARD SUMMARY BOX
+==================================================
+
+Create a summary box in cells O1:Q10:
+
+O1: ={"PORTFOLIO DASHBOARD";"";
+      "Bonds Analyzed:";
+      "Avg Yield:";
+      "Avg Duration:";
+      "High Yield (>6%):";
+      "Long Duration (>15):";
+      "Total Market Value:";
+      "Last Updated:"}
+
+P1: ={"";"";
+      COUNTA(A2:A51);
+      TEXT(AVERAGE(G2:G51),"0.00%");
+      TEXT(AVERAGE(H2:H51),"0.0");
+      COUNTIF(G2:G51,">6");
+      COUNTIF(H2:H51,">15");
+      TEXT(SUM(B2:B51)*10000,"$#,##0");
+      TEXT(NOW(),"mm/dd/yyyy hh:mm")}
+
+==================================================
+SPARKLINES FOR VISUALIZATION
+==================================================
+
+YTM Distribution Sparkline:
+=SPARKLINE(G2:G51,{"charttype","bar";"max",10})
+
+Duration Distribution Sparkline:
+=SPARKLINE(H2:H51,{"charttype","bar";"max",20})
+
+Price Distribution Sparkline:
+=SPARKLINE(B2:B51,{"charttype","bar";"max",120})
+
+==================================================
+ARRAY FORMULA PERFORMANCE TEST
+==================================================
+
+Test Timing (Place in empty cell):
+=CONCATENATE("Process Time: ",
+             TEXT((NOW()-TIME(HOUR(NOW()),MINUTE(NOW()),SECOND(NOW())))*86400,"0.00"),
+             " seconds")
+
+==================================================
+NOTES
+==================================================
+
+1. After copying formulas, press Enter (not Ctrl+Enter)
+2. Array formulas automatically expand to fill the range
+3. Use Ctrl+Shift+Enter for legacy array formula entry if needed
+4. Clear cache with =XT_CLEAR_CACHE() if data seems stale
+5. All prices should be numeric (not text)
+6. Dates should be in YYYY-MM-DD format for best results
+
+==================================================

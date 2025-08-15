@@ -45,5 +45,4 @@ liveness_check:
   failure_threshold: 3
   success_threshold: 2
 
-# Note: skip_files removed for python311 runtime
-# Use .gcloudignore instead for file exclusions
+# File exclusion handled by .gcloudignore

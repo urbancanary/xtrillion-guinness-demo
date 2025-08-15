@@ -47,4 +47,4 @@ liveness_check:
   success_threshold: 1
 
 # Note: Include test files in development
-# skip_files removed - use .gcloudignore instead
+# Uses .gcloudignore for file exclusion
