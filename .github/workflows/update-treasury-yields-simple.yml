@@ -33,7 +33,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests pandas lxml
+        pip install requests pandas lxml google-cloud-storage
     
     - name: Update Treasury yields
       run: |
@@ -51,6 +51,17 @@ jobs:
           echo "📊 Treasury yields have been updated"
         fi
     
+    - name: Setup Google Cloud authentication
+      if: steps.check_changes.outputs.changed == 'true'
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+    
+    - name: Upload to Google Cloud Storage
+      if: steps.check_changes.outputs.changed == 'true'
+      run: |
+        python treasury_cloud_sync.py
+        
     - name: Commit and push if changed
       if: steps.check_changes.outputs.changed == 'true'
       run: |
@@ -60,7 +71,8 @@ jobs:
         git commit -m "🏦 Update Treasury yields for $(date +%Y-%m-%d)
         
         Automated daily update of Treasury yield curve data
-        Source: US Treasury Direct API"
+        Source: US Treasury Direct API
+        Cloud: gs://json-receiver-databases/bonds_data.db"
         git push
     
     - name: Summary
@@ -68,8 +80,10 @@ jobs:
       run: |
         if [ "${{ steps.check_changes.outputs.changed }}" == "true" ]; then
           echo "✅ Treasury yields updated successfully" >> $GITHUB_STEP_SUMMARY
-          echo "Database: bonds_data.db" >> $GITHUB_STEP_SUMMARY
-          echo "Date: $(date +%Y-%m-%d)" >> $GITHUB_STEP_SUMMARY
+          echo "📁 Local: bonds_data.db" >> $GITHUB_STEP_SUMMARY
+          echo "☁️ Cloud: gs://json-receiver-databases/bonds_data.db" >> $GITHUB_STEP_SUMMARY
+          echo "📅 Date: $(date +%Y-%m-%d)" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 Uses existing json_receiver_project_v2 infrastructure" >> $GITHUB_STEP_SUMMARY
         else
           echo "ℹ️ No changes in Treasury yields today" >> $GITHUB_STEP_SUMMARY
         fi
