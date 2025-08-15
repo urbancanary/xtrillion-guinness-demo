@@ -1281,6 +1281,139 @@ function XT_DEBUG_API(bond, price, environment) {
 }
 
 /**
+ * Debug version of XT_SMART_NOCACHE that shows settlement detection
+ * @param {Array} bonds Bond descriptions 
+ * @param {Array} prices_and_dates Multi-column with prices and settlement dates
+ * @param {string} settlement_date Optional settlement date
+ * @param {boolean} force_refresh Ignored
+ * @param {string} environment Environment
+ * @return {Array} Debug information with bond results
+ * @customfunction
+ */
+function XT_DEBUG_SMART(bonds, prices_and_dates, settlement_date, force_refresh, environment) {
+  try {
+    // Handle input arrays
+    bonds = Array.isArray(bonds) ? bonds : [[bonds]];
+    var prices = Array.isArray(prices_and_dates) ? prices_and_dates : [[prices_and_dates]];
+    
+    var output = [["Debug Step", "Value", "Bond", "YTM", "Settlement Used"]];
+    
+    // Debug: Show input structure
+    output.push(["Input Type", Array.isArray(prices_and_dates) ? "Array" : typeof prices_and_dates, "", "", ""]);
+    if (prices && prices.length > 0) {
+      output.push(["First Row Length", Array.isArray(prices[0]) ? prices[0].length : "N/A", "", "", ""]);
+      if (Array.isArray(prices[0]) && prices[0].length >= 2) {
+        output.push(["Price (B)", prices[0][0], "", "", ""]);
+        output.push(["Settlement (C)", prices[0][1], "", "", ""]);
+      }
+    }
+    
+    // Detect settlement date from multi-column input
+    var detectedSettlement = null;
+    if (prices && prices.length > 0 && Array.isArray(prices[0]) && prices[0].length >= 2) {
+      var priceColumn = [];
+      var settlementColumn = [];
+      
+      for (var i = 0; i < prices.length; i++) {
+        if (prices[i] && prices[i][0]) priceColumn.push(prices[i][0]);
+        if (prices[i] && prices[i][1]) settlementColumn.push(prices[i][1]);
+      }
+      
+      prices = priceColumn;
+      
+      if (settlementColumn.length > 0 && settlementColumn[0]) {
+        detectedSettlement = convertToISODate(settlementColumn[0]);
+      }
+    } else {
+      prices = prices.map(function(row) { 
+        return Array.isArray(row) ? row[0] : row; 
+      }).filter(function(p) { return p; });
+    }
+    
+    // Flatten bonds
+    bonds = bonds.map(function(row) { 
+      return Array.isArray(row) ? row[0] : row; 
+    }).filter(function(b) { return b; });
+    
+    // Use detected settlement if none provided
+    var finalSettlement = settlement_date || detectedSettlement;
+    
+    output.push(["Detected Settlement", detectedSettlement || "none", "", "", ""]);
+    output.push(["Final Settlement", finalSettlement || "default", "", "", ""]);
+    
+    // Get first bond result to show actual API call
+    if (bonds.length > 0 && prices.length > 0) {
+      var config = getEnvironmentConfig(environment);
+      var bond = bonds[0];
+      var price = prices[0];
+      
+      try {
+        var data = callBondAPIOptimized(bond, price, finalSettlement, ["ytm"], environment);
+        if (data && data.analytics) {
+          output.push(["API Call Result", "Success", bond, data.analytics.ytm, data.analytics.settlement_date]);
+        } else {
+          output.push(["API Call Result", "Failed", bond, "N/A", "N/A"]);
+        }
+      } catch (error) {
+        output.push(["API Call Result", "Error: " + error.toString(), bond, "N/A", "N/A"]);
+      }
+    }
+    
+    return output;
+    
+  } catch (error) {
+    return [["Error", error.toString(), "", "", ""]];
+  }
+}
+
+/**
+ * Debug settlement date detection from multi-column input
+ * @param {Array} bonds Bond descriptions 
+ * @param {Array} prices_and_dates Multi-column with prices and settlement dates
+ * @return {Array} Debug information about settlement detection
+ * @customfunction
+ */
+function XT_DEBUG_SETTLEMENT(bonds, prices_and_dates) {
+  var result = [];
+  result.push(["Debug Info", "Value"]);
+  
+  try {
+    // Check input structure
+    result.push(["Input Type", Array.isArray(prices_and_dates) ? "Array" : typeof prices_and_dates]);
+    result.push(["Input Length", prices_and_dates ? prices_and_dates.length : "null"]);
+    
+    if (prices_and_dates && prices_and_dates.length > 0) {
+      result.push(["First Row Type", Array.isArray(prices_and_dates[0]) ? "Array" : typeof prices_and_dates[0]]);
+      result.push(["First Row Length", Array.isArray(prices_and_dates[0]) ? prices_and_dates[0].length : "N/A"]);
+      
+      if (Array.isArray(prices_and_dates[0]) && prices_and_dates[0].length >= 2) {
+        result.push(["Price (B)", prices_and_dates[0][0]]);
+        result.push(["Settlement (C)", prices_and_dates[0][1]]);
+        result.push(["Settlement Type", typeof prices_and_dates[0][1]]);
+        
+        // Test date conversion
+        var rawDate = prices_and_dates[0][1];
+        var convertedDate = convertToISODate(rawDate);
+        result.push(["Raw Date", rawDate]);
+        result.push(["Converted Date", convertedDate]);
+        
+        // Test the actual detection logic
+        var detectedSettlement = null;
+        if (prices_and_dates[0][1]) {
+          detectedSettlement = convertToISODate(prices_and_dates[0][1]);
+        }
+        result.push(["Detected Settlement", detectedSettlement]);
+      }
+    }
+    
+    return result;
+  } catch (error) {
+    result.push(["Error", error.toString()]);
+    return result;
+  }
+}
+
+/**
  * Test settlement date detection and processing
  * @param {Array} bonds Bond descriptions 
  * @param {Array} prices Prices with optional settlement dates
