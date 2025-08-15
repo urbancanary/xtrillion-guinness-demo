@@ -1119,6 +1119,11 @@ function XT_SMART_NOCACHE(bonds, prices, settlement_date, force_refresh, environ
     bonds = Array.isArray(bonds) ? bonds : [[bonds]];
     prices = Array.isArray(prices) ? prices : [[prices]];
     
+    // Special Bloomberg comparison mode
+    if (settlement_date === "bloomberg" || settlement_date === "bbg") {
+      settlement_date = "2025-06-30"; // Use Bloomberg comparison settlement date
+    }
+    
     // Detect settlement date from multi-column input
     var detectedSettlement = null;
     if (prices && prices.length > 0 && Array.isArray(prices[0]) && prices[0].length >= 2) {
